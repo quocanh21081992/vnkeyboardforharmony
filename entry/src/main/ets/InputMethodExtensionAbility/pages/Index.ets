@@ -3,24 +3,29 @@ import keyboardController from '../model/KeyboardControllerSingleton';
 import { KEYBOARD_ROWS, KeyData, KeyKind } from './KeyboardKeyData';
 
 class KbStyle {
-  bg: string = '#121212';
+  // Màu nền bạn yêu cầu (pick từ ảnh): #242424
+  bg: string = '#242424';
+
   padding: number = 8;
+  safeBottom: number = 12; // phải khớp KEYBOARD_SAFE_BOTTOM_VP trong KeyboardController.ets
 
   keyH: number = 48;
   gap: number = 6;
   radius: number = 12;
 
-  keyBg: string = '#2A2A2A';
-  keyBgPressed: string = '#3A3A3A';
+  // Key colors (giữ gần giống dark keyboard)
+  keyBg: string = '#2C2C2E';
+  keyBgPressed: string = '#3A3A3C';
 
-  keyBgFn: string = '#1F1F1F';
-  keyBgFnPressed: string = '#2E2E2E';
+  keyBgFn: string = '#2A2A2C';
+  keyBgFnPressed: string = '#3A3A3C';
 
   textColor: string = '#EDEDED';
   textSize: number = 18;
 
-  // Spacebar hint bar
-  spaceHint: string = '#BDBDBD33';
+  // Thanh hint trong spacebar (màu hơi ngả vàng như ảnh)
+  spaceHint: string = '#B9B100';
+  spaceHintAlpha: number = 0.55;
 }
 
 @Entry
@@ -32,7 +37,6 @@ struct Index {
   @State private pressedKeyId: string = '';
 
   private rowIndent(rowIdx: number): number {
-    // Indent kiểu Gboard/QWERTY
     if (rowIdx === 1) return 14;
     if (rowIdx === 2) return 6;
     return 0;
@@ -60,7 +64,6 @@ struct Index {
   }
 
   private onKey(k: KeyData): void {
-    // fire-and-forget (đỡ vướng async trong UI)
     if (k.kind === KeyKind.Shift) {
       this.shiftOn = !this.shiftOn;
       return;
@@ -78,21 +81,19 @@ struct Index {
       return;
     }
 
+    // Char
     const out: string = this.shiftOn ? k.value.toUpperCase() : k.value;
     keyboardController.commitText(out);
 
-    // one-shot shift
+    // tắt shift sau 1 ký tự (hành vi phổ biến)
     if (this.shiftOn) this.shiftOn = false;
   }
 
   private handleTouch(k: KeyData, e: TouchEvent): void {
     if (e.type === TouchType.Down) {
       this.pressedKeyId = k.id;
-    } else if (e.type === TouchType.Up) {
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       this.pressedKeyId = '';
-    } else {
-      // một số bản có Cancel, nhưng không phải bản nào cũng expose enum này
-      // => không đụng TouchType.Cancel để tránh lỗi compile
     }
   }
 
@@ -100,14 +101,15 @@ struct Index {
   private KeyView(k: KeyData) {
     Stack() {
       if (k.kind === KeyKind.Space) {
-        // Spacebar style giống Gboard: 1 thanh mảnh ở giữa
+        // Spacebar: có hint bar ở giữa
         Row() {
           Blank()
           Stack()
             .height(4)
             .width('55%')
             .borderRadius(999)
-            .backgroundColor(this.s.spaceHint);
+            .backgroundColor(this.s.spaceHint)
+            .opacity(this.s.spaceHintAlpha);
           Blank()
         }
         .width('100%')
@@ -150,7 +152,13 @@ struct Index {
       }, (_: Array<KeyData>, idx: number) => String(idx));
     }
     .width('100%')
+    .height('100%') // quan trọng để nền phủ toàn panel
     .backgroundColor(this.s.bg)
-    .padding(this.s.padding);
+    .padding({
+      left: this.s.padding,
+      right: this.s.padding,
+      top: this.s.padding,
+      bottom: this.s.padding + this.s.safeBottom
+    });
   }
 }

@@ -1,19 +1,55 @@
-// entry/src/main/ets/InputMethodExtensionAbility/model/KeyboardController.ets
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import type InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
 
 const UI_PAGE: string = 'InputMethodExtensionAbility/pages/Index';
-const KEYBOARD_HEIGHT: number = 320; // bạn có thể đổi 280/360 tùy máy
+
+// ---- Height tuning (vp) ----
+// Với layout 4 hàng phím (keyH=48, padding=8, gap=6...) thì ~228vp là đủ.
+// Safe bottom để giống bàn phím gốc (khu vực home indicator).
+const KEYBOARD_CONTENT_HEIGHT_VP: number = 228;
+const KEYBOARD_SAFE_BOTTOM_VP: number = 12; // chỉnh 10~16 để khớp máy bạn
+const KEYBOARD_TOTAL_HEIGHT_VP: number = KEYBOARD_CONTENT_HEIGHT_VP + KEYBOARD_SAFE_BOTTOM_VP;
+
+// ---- ArkTS: avoid object-literal-as-types / untyped obj-literals ----
+class PanelSize {
+  widthPx: number = 0;
+  heightPx: number = 0;
+}
+
+class PanelInfoImpl implements inputMethodEngine.PanelInfo {
+  type: inputMethodEngine.PanelType = inputMethodEngine.PanelType.SOFT_KEYBOARD;
+  flag: inputMethodEngine.PanelFlag = inputMethodEngine.PanelFlag.FLG_FIXED;
+}
+
+function getPanelSizePx(): PanelSize {
+  const s: PanelSize = new PanelSize();
+
+  // getDefaultDisplaySync() có thể throw -> bắt buộc try/catch
+  try {
+    const d: display.Display = display.getDefaultDisplaySync();
+
+    // densityPixels thường chính là VPR (log của bạn: 3.375)
+    const vpr: number = d.densityPixels > 0 ? d.densityPixels : 1;
+
+    s.widthPx = d.width;
+    s.heightPx = Math.max(1, Math.round(KEYBOARD_TOTAL_HEIGHT_VP * vpr));
+    return s;
+  } catch {
+    // fallback an toàn nếu không lấy được display
+    s.widthPx = 1080;
+    s.heightPx = 720;
+    return s;
+  }
+}
 
 export class KeyboardController {
   private panel?: inputMethodEngine.Panel;
   private textInputClient?: inputMethodEngine.TextInputClient;
-
   private pendingShow: boolean = false;
 
   onCreate(context: InputMethodExtensionContext): void {
-    const ime = inputMethodEngine.getInputMethodAbility();
+    const ime: inputMethodEngine.InputMethodAbility = inputMethodEngine.getInputMethodAbility();
     if (!ime) return;
 
     this.initPanel(context, ime);
@@ -38,7 +74,11 @@ export class KeyboardController {
 
   onDestroy(): void {
     this.pendingShow = false;
-    try { this.panel?.hide(); } catch (_) {}
+    try {
+      this.panel?.hide();
+    } catch {
+      // ignore
+    }
     this.panel = undefined;
     this.textInputClient = undefined;
   }
@@ -47,43 +87,48 @@ export class KeyboardController {
     context: InputMethodExtensionContext,
     ime: inputMethodEngine.InputMethodAbility
   ): Promise<void> {
-    const panelInfo: inputMethodEngine.PanelInfo = {
-      type: inputMethodEngine.PanelType.SOFT_KEYBOARD,
-      flag: inputMethodEngine.PanelFlag.FLG_FIXED
-    };
+    const panelInfo: PanelInfoImpl = new PanelInfoImpl();
 
     try {
       const panel: inputMethodEngine.Panel = await ime.createPanel(context, panelInfo);
 
-      // 1) resize panel để tránh rect height = 1
-      const d: display.Display = display.getDefaultDisplaySync();
-      await panel.resize(d.width, KEYBOARD_HEIGHT);
+      const size: PanelSize = getPanelSizePx();
+      await panel.resize(size.widthPx, size.heightPx);
 
-      // 2) load UI
       panel.setUiContent(UI_PAGE, null);
 
       this.panel = panel;
 
-      // 3) show sau khi init xong
       if (this.pendingShow) {
         this.pendingShow = false;
         panel.show();
       }
-    } catch (_) {
-      // nếu muốn debug sâu: log error ở đây
+    } catch {
+      // nếu muốn debug thì bạn log ở đây, còn không thì bỏ qua
     }
   }
 
   async commitText(text: string): Promise<void> {
-    const client = this.textInputClient;
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
-    try { await client.insertText(text); } catch (_) {}
+
+    try {
+      await client.insertText(text);
+    } catch {
+      // ignore
+    }
   }
 
   async backspace(): Promise<void> {
-    const client = this.textInputClient;
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
-    try { await client.deleteForward(1); } catch (_) {}
+
+    // Backspace = xóa ký tự trước con trỏ
+    try {
+      await client.deleteBackward(1);
+    } catch {
+      // ignore
+    }
   }
 
   async enter(): Promise<void> {
