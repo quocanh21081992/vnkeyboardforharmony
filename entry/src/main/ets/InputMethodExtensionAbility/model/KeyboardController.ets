@@ -2,16 +2,15 @@ import inputMethodEngine from '@ohos.inputMethodEngine';
 import type InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
 
+import { TelexEngine, TelexActionKind } from './TelexEngine';
+
 const UI_PAGE: string = 'InputMethodExtensionAbility/pages/Index';
 
 // ---- Height tuning (vp) ----
-// Với layout 4 hàng phím (keyH=48, padding=8, gap=6...) thì ~228vp là đủ.
-// Safe bottom để giống bàn phím gốc (khu vực home indicator).
 const KEYBOARD_CONTENT_HEIGHT_VP: number = 228;
-const KEYBOARD_SAFE_BOTTOM_VP: number = 12; // chỉnh 10~16 để khớp máy bạn
+const KEYBOARD_SAFE_BOTTOM_VP: number = 12;
 const KEYBOARD_TOTAL_HEIGHT_VP: number = KEYBOARD_CONTENT_HEIGHT_VP + KEYBOARD_SAFE_BOTTOM_VP;
 
-// ---- ArkTS: avoid object-literal-as-types / untyped obj-literals ----
 class PanelSize {
   widthPx: number = 0;
   heightPx: number = 0;
@@ -24,19 +23,13 @@ class PanelInfoImpl implements inputMethodEngine.PanelInfo {
 
 function getPanelSizePx(): PanelSize {
   const s: PanelSize = new PanelSize();
-
-  // getDefaultDisplaySync() có thể throw -> bắt buộc try/catch
   try {
     const d: display.Display = display.getDefaultDisplaySync();
-
-    // densityPixels thường chính là VPR (log của bạn: 3.375)
     const vpr: number = d.densityPixels > 0 ? d.densityPixels : 1;
-
     s.widthPx = d.width;
     s.heightPx = Math.max(1, Math.round(KEYBOARD_TOTAL_HEIGHT_VP * vpr));
     return s;
   } catch {
-    // fallback an toàn nếu không lấy được display
     s.widthPx = 1080;
     s.heightPx = 720;
     return s;
@@ -48,18 +41,19 @@ export class KeyboardController {
   private textInputClient?: inputMethodEngine.TextInputClient;
   private pendingShow: boolean = false;
 
-  // --- Backspace hold-to-repeat ---
-  // - Xóa 1 ký tự ngay khi nhấn
-  // - Sau một khoảng delay ngắn, tự động xóa liên tục cho đến khi thả tay
+  // ===== Telex composing (OpenKey-like) =====
+  private composingWord: string = '';
+  // modernOrthography=true (oà/uý), quickTelex=false (tuỳ bạn bật sau)
+  private readonly telex: TelexEngine = new TelexEngine(true, false);
+
+  // ===== Backspace hold-to-repeat =====
   private backspaceHolding: boolean = false;
   private backspaceDelayTimerId: number = 0;
   private backspaceRepeatTimerId: number = 0;
 
-  // Có thể chỉnh theo ý bạn
   private readonly backspaceInitialDelayMs: number = 350;
   private readonly backspaceRepeatIntervalMs: number = 55;
 
-  // ArkTSCheck: tránh dùng unknown/any khi làm việc với timer id
   private setTimeoutId(handler: () => void, delayMs: number): number {
     return setTimeout(handler, delayMs) as number;
   }
@@ -77,6 +71,7 @@ export class KeyboardController {
     ime.on('inputStart',
       (_kbCtrl: inputMethodEngine.KeyboardController, client: inputMethodEngine.TextInputClient) => {
         this.textInputClient = client;
+        this.resetComposing();
 
         if (this.panel) {
           this.panel.show();
@@ -87,6 +82,7 @@ export class KeyboardController {
 
     ime.on('inputStop', () => {
       this.stopBackspaceRepeat();
+      this.resetComposing();
       this.textInputClient = undefined;
       this.pendingShow = false;
       this.panel?.hide();
@@ -95,6 +91,7 @@ export class KeyboardController {
 
   onDestroy(): void {
     this.stopBackspaceRepeat();
+    this.resetComposing();
     this.pendingShow = false;
     try {
       this.panel?.hide();
@@ -105,12 +102,15 @@ export class KeyboardController {
     this.textInputClient = undefined;
   }
 
+  private resetComposing(): void {
+    this.composingWord = '';
+  }
+
   private async initPanel(
     context: InputMethodExtensionContext,
     ime: inputMethodEngine.InputMethodAbility
   ): Promise<void> {
     const panelInfo: PanelInfoImpl = new PanelInfoImpl();
-
     try {
       const panel: inputMethodEngine.Panel = await ime.createPanel(context, panelInfo);
 
@@ -118,7 +118,6 @@ export class KeyboardController {
       await panel.resize(size.widthPx, size.heightPx);
 
       panel.setUiContent(UI_PAGE, null);
-
       this.panel = panel;
 
       if (this.pendingShow) {
@@ -126,11 +125,29 @@ export class KeyboardController {
         panel.show();
       }
     } catch {
-      // nếu muốn debug thì bạn log ở đây, còn không thì bỏ qua
+      // ignore
     }
   }
 
-  async commitText(text: string): Promise<void> {
+  private async replaceComposing(newWord: string): Promise<void> {
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    if (!client) return;
+
+    const oldLen: number = this.composingWord.length;
+    try {
+      if (oldLen > 0) {
+        await client.deleteForward(oldLen);
+      }
+      if (newWord.length > 0) {
+        await client.insertText(newWord);
+      }
+      this.composingWord = newWord;
+    } catch {
+      // ignore
+    }
+  }
+
+  private async appendText(text: string): Promise<void> {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
 
@@ -142,22 +159,55 @@ export class KeyboardController {
   }
 
   /**
-   * Nhấn giữ Backspace để xóa liên tục.
-   * UI nên gọi startBackspaceRepeat() ở TouchType.Down,
-   * và stopBackspaceRepeat() ở TouchType.Up/Cancel.
+   * Commit text with Telex processing (OpenKey-like).
+   * - letters a-z: apply Telex (tone/shape) inside current composing word
+   * - space / newline: commit and reset composing
+   */
+  async commitText(text: string): Promise<void> {
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    if (!client) return;
+
+    if (text === ' ' || text === '\n') {
+      // Word boundary
+      this.resetComposing();
+      await this.appendText(text);
+      return;
+    }
+
+    if (text.length !== 1) {
+      // Safety: any multi-char insert resets composing
+      this.resetComposing();
+      await this.appendText(text);
+      return;
+    }
+
+    const r = this.telex.apply(this.composingWord, text);
+
+    if (r.kind === TelexActionKind.Replace) {
+      await this.replaceComposing(r.newWord);
+      return;
+    }
+
+    // Append literal key
+    await this.appendText(text);
+    this.composingWord = this.composingWord + text;
+  }
+
+  /**
+   * Hold Backspace to repeat.
+   * UI gọi startBackspaceRepeat() ở TouchType.Down,
+   * stopBackspaceRepeat() ở TouchType.Up/Cancel.
    */
   startBackspaceRepeat(): void {
-    // tránh chạy timer nếu không có client
     if (!this.textInputClient) return;
     if (this.backspaceHolding) return;
 
     this.backspaceHolding = true;
     this.clearBackspaceTimers();
 
-    // Xóa 1 ký tự ngay khi nhấn
+    // delete 1 immediately
     this.backspace();
 
-    // Sau delay thì bắt đầu lặp
     this.backspaceDelayTimerId = this.setTimeoutId(() => {
       if (!this.backspaceHolding) return;
 
@@ -176,20 +226,11 @@ export class KeyboardController {
 
   private clearBackspaceTimers(): void {
     if (this.backspaceDelayTimerId !== 0) {
-      try {
-        clearTimeout(this.backspaceDelayTimerId);
-      } catch {
-        // ignore
-      }
+      try { clearTimeout(this.backspaceDelayTimerId); } catch { /* ignore */ }
       this.backspaceDelayTimerId = 0;
     }
-
     if (this.backspaceRepeatTimerId !== 0) {
-      try {
-        clearInterval(this.backspaceRepeatTimerId);
-      } catch {
-        // ignore
-      }
+      try { clearInterval(this.backspaceRepeatTimerId); } catch { /* ignore */ }
       this.backspaceRepeatTimerId = 0;
     }
   }
@@ -198,7 +239,12 @@ export class KeyboardController {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
 
-    // Backspace = xóa ký tự trước con trỏ (deleteForward)
+    // keep composingWord in sync (best-effort)
+    if (this.composingWord.length > 0) {
+      this.composingWord = this.composingWord.slice(0, this.composingWord.length - 1);
+    }
+
+    // Backspace = deleteForward (xóa ký tự trước con trỏ)
     try {
       await client.deleteForward(1);
     } catch {
