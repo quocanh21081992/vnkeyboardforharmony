@@ -6,7 +6,7 @@ class KbStyle {
   bg: string = '#242424';
 
   // Tăng nhẹ padding để layout giống bàn phím hệ thống hơn
-  padding: number = 8;
+  padding: number = 2;
 
   // GIỮ NGUYÊN: thanh pad dưới
   safeBottom: number = 12;

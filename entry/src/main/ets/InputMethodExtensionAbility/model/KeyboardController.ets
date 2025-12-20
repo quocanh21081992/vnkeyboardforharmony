@@ -46,7 +46,8 @@ export class KeyboardController {
 
   // ===== Telex composing/buffer =====
   private composingWord: string = '';
-  private readonly telex: TelexEngine = new TelexEngine(true, false);
+  // IMPORTANT: KHÔNG readonly để có thể "reset" bằng cách tạo instance mới
+  private telex: TelexEngine = new TelexEngine(true, false);
 
   // ===== Backspace hold-to-repeat =====
   private backspaceHolding: boolean = false;
@@ -105,8 +106,14 @@ export class KeyboardController {
     this.textInputClient = undefined;
   }
 
+  private resetTelex(): void {
+    // ✅ thay cho telex.reset()
+    this.telex = new TelexEngine(true, false);
+  }
+
   private resetComposing(): void {
     this.composingWord = '';
+    this.resetTelex();
   }
 
   private async initPanel(
@@ -167,10 +174,6 @@ export class KeyboardController {
    * ✅ FIX QUAN TRỌNG CHO ANDROID VM:
    * - Clear buffer NGAY LẬP TỨC (sync)
    * - Chỉ insertText() 1 lần duy nhất: buf + tail
-   *
-   * Nhờ vậy:
-   * - không bị rơi dấu space
-   * - preview/buffer xoá ngay cả khi VM insert chậm
    */
   private async commitBufferAndTailSingleInsert(tail: string): Promise<void> {
     const buf: string = this.composingWord;
@@ -185,6 +188,60 @@ export class KeyboardController {
   }
 
   /**
+   * Enter handling:
+   * - flush composingWord
+   * - sendKeyFunction(enterKeyType) cho ô search/done/go...
+   * - fallback: newline nếu enterKeyType là NONE/UNSPECIFIED hoặc lỗi
+   */
+  private async performEnterAction(): Promise<void> {
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    if (!client) {
+      // không có client thì chỉ clear buffer để preview không kẹt
+      this.resetComposing();
+      return;
+    }
+
+    // 1) flush từ telex đang compose (nếu có)
+    if (this.composingWord.length > 0) {
+      await this.commitBufferAndTailSingleInsert('');
+      this.resetTelex();
+    } else {
+      this.resetTelex();
+    }
+
+    // 2) lấy enterKeyType để bấm đúng "Done/Search/Go/Next..."
+    try {
+      const editorAttribute: inputMethodEngine.EditorAttribute = await client.getEditorAttribute();
+      const enterKeyType: number = editorAttribute.enterKeyType as number;
+
+      // NONE/UNSPECIFIED -> xuống dòng
+      if (enterKeyType === 0 || enterKeyType === 1) {
+        await this.insertTextSafe('\n');
+        this.resetComposing();
+        return;
+      }
+
+      await client.sendKeyFunction(enterKeyType);
+      this.resetComposing();
+      return;
+    } catch {
+      // ignore
+    }
+
+    // 3) fallback: DONE (6) -> nếu không được thì newline
+    try {
+      await client.sendKeyFunction(6);
+      this.resetComposing();
+      return;
+    } catch {
+      // ignore
+    }
+
+    await this.insertTextSafe('\n');
+    this.resetComposing();
+  }
+
+  /**
    * Buffer mode:
    * - letters: Telex apply only in composingWord (no insert to app)
    * - space/enter: commit composingWord + delimiter in ONE insert
@@ -193,12 +250,10 @@ export class KeyboardController {
   async commitText(text: string): Promise<void> {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
 
-    // ⚠️ Dù không có client (VM bridge glitch), vẫn nên clear buffer khi commit boundary
-    // để preview không bị kẹt.
-    if (this.bufferMode && (text === ' ' || text === '\n')) {
-      // clear + try insert if client exists
+    // boundary: thêm '.' ',' giống space/enter để khi mất client không kẹt preview
+    if (this.bufferMode && (text === ' ' || text === '\n' || text === '.' || text === ',')) {
       if (!client) {
-        this.composingWord = '';
+        this.resetComposing();
         return;
       }
       await this.commitBufferAndTailSingleInsert(text);
@@ -298,6 +353,8 @@ export class KeyboardController {
     if (this.bufferMode) {
       if (this.composingWord.length > 0) {
         this.composingWord = this.composingWord.slice(0, this.composingWord.length - 1);
+        // reset engine instance để state sạch cho lần gõ tiếp
+        this.resetTelex();
         return;
       }
     }
@@ -310,7 +367,8 @@ export class KeyboardController {
   }
 
   async enter(): Promise<void> {
-    await this.commitText('\n');
+    // ✅ FIX: không commit '\n' cứng nữa
+    await this.performEnterAction();
   }
 
   async space(): Promise<void> {
