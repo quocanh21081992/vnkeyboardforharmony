@@ -4,67 +4,77 @@ export enum KeyKind {
   Char = 0,
   Shift = 1,
   Backspace = 2,
-  Space = 3,
-  Enter = 4
+  Enter = 3,
+  Space = 4,
+  Num123 = 5
 }
 
 export class KeyData {
-  id: string;
-  kind: KeyKind;
-  label: string;
-  value: string;
-  weight: number;
+  id: string = '';
+  kind: KeyKind = KeyKind.Char;
+  label: string = '';
+  value: string = '';
+  weight: number = 1;
+}
 
-  constructor(id: string, kind: KeyKind, label: string, value: string, weight: number = 1) {
-    this.id = id;
-    this.kind = kind;
-    this.label = label;
-    this.value = value;
-    this.weight = weight;
-  }
+// helper tạo key để tránh object-literal typing issues
+function k(id: string, kind: KeyKind, label: string, value: string, weight: number): KeyData {
+  const d: KeyData = new KeyData();
+  d.id = id;
+  d.kind = kind;
+  d.label = label;
+  d.value = value;
+  d.weight = weight;
+  return d;
 }
 
 export const KEYBOARD_ROWS: Array<Array<KeyData>> = [
-  // Row 1
+  // row 0
   [
-    new KeyData('q', KeyKind.Char, 'q', 'q'),
-    new KeyData('w', KeyKind.Char, 'w', 'w'),
-    new KeyData('e', KeyKind.Char, 'e', 'e'),
-    new KeyData('r', KeyKind.Char, 'r', 'r'),
-    new KeyData('t', KeyKind.Char, 't', 't'),
-    new KeyData('y', KeyKind.Char, 'y', 'y'),
-    new KeyData('u', KeyKind.Char, 'u', 'u'),
-    new KeyData('i', KeyKind.Char, 'i', 'i'),
-    new KeyData('o', KeyKind.Char, 'o', 'o'),
-    new KeyData('p', KeyKind.Char, 'p', 'p')
+    k('q', KeyKind.Char, 'q', 'q', 1),
+    k('w', KeyKind.Char, 'w', 'w', 1),
+    k('e', KeyKind.Char, 'e', 'e', 1),
+    k('r', KeyKind.Char, 'r', 'r', 1),
+    k('t', KeyKind.Char, 't', 't', 1),
+    k('y', KeyKind.Char, 'y', 'y', 1),
+    k('u', KeyKind.Char, 'u', 'u', 1),
+    k('i', KeyKind.Char, 'i', 'i', 1),
+    k('o', KeyKind.Char, 'o', 'o', 1),
+    k('p', KeyKind.Char, 'p', 'p', 1)
   ],
-  // Row 2
+
+  // row 1
   [
-    new KeyData('a', KeyKind.Char, 'a', 'a'),
-    new KeyData('s', KeyKind.Char, 's', 's'),
-    new KeyData('d', KeyKind.Char, 'd', 'd'),
-    new KeyData('f', KeyKind.Char, 'f', 'f'),
-    new KeyData('g', KeyKind.Char, 'g', 'g'),
-    new KeyData('h', KeyKind.Char, 'h', 'h'),
-    new KeyData('j', KeyKind.Char, 'j', 'j'),
-    new KeyData('k', KeyKind.Char, 'k', 'k'),
-    new KeyData('l', KeyKind.Char, 'l', 'l')
+    k('a', KeyKind.Char, 'a', 'a', 1),
+    k('s', KeyKind.Char, 's', 's', 1),
+    k('d', KeyKind.Char, 'd', 'd', 1),
+    k('f', KeyKind.Char, 'f', 'f', 1),
+    k('g', KeyKind.Char, 'g', 'g', 1),
+    k('h', KeyKind.Char, 'h', 'h', 1),
+    k('j', KeyKind.Char, 'j', 'j', 1),
+    k('k', KeyKind.Char, 'k', 'k', 1),
+    k('l', KeyKind.Char, 'l', 'l', 1)
   ],
-  // Row 3
+
+  // row 2
   [
-    new KeyData('shift', KeyKind.Shift, 'Shift', '', 1.5),
-    new KeyData('z', KeyKind.Char, 'z', 'z'),
-    new KeyData('x', KeyKind.Char, 'x', 'x'),
-    new KeyData('c', KeyKind.Char, 'c', 'c'),
-    new KeyData('v', KeyKind.Char, 'v', 'v'),
-    new KeyData('b', KeyKind.Char, 'b', 'b'),
-    new KeyData('n', KeyKind.Char, 'n', 'n'),
-    new KeyData('m', KeyKind.Char, 'm', 'm'),
-    new KeyData('bksp', KeyKind.Backspace, '⌫', '', 1.5)
+    k('shift', KeyKind.Shift, '⇧', '', 1.35),
+    k('z', KeyKind.Char, 'z', 'z', 1),
+    k('x', KeyKind.Char, 'x', 'x', 1),
+    k('c', KeyKind.Char, 'c', 'c', 1),
+    k('v', KeyKind.Char, 'v', 'v', 1),
+    k('b', KeyKind.Char, 'b', 'b', 1),
+    k('n', KeyKind.Char, 'n', 'n', 1),
+    k('m', KeyKind.Char, 'm', 'm', 1),
+    k('backspace', KeyKind.Backspace, '⌫', '', 1.35)
   ],
-  // Row 4
+
+  // row 3 (Space row): 123 , Space . Enter
   [
-    new KeyData('space', KeyKind.Space, 'Space', ' ', 4),
-    new KeyData('enter', KeyKind.Enter, 'Enter', '\n', 2)
+    k('num123', KeyKind.Num123, '123', '', 1.35),
+    k('comma', KeyKind.Char, ',', ',', 1.0),
+    k('space', KeyKind.Space, '', ' ', 3.6),
+    k('dot', KeyKind.Char, '.', '.', 1.0),
+    k('enter', KeyKind.Enter, '⏎', '\n', 1.35)
   ]
 ];

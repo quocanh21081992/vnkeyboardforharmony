@@ -7,7 +7,7 @@ import { TelexEngine, TelexActionKind } from './TelexEngine';
 const UI_PAGE: string = 'InputMethodExtensionAbility/pages/Index';
 
 // ---- Height tuning (vp) ----
-const KEYBOARD_CONTENT_HEIGHT_VP: number = 228;
+const KEYBOARD_CONTENT_HEIGHT_VP: number = 240;
 const KEYBOARD_SAFE_BOTTOM_VP: number = 12;
 const KEYBOARD_TOTAL_HEIGHT_VP: number = KEYBOARD_CONTENT_HEIGHT_VP + KEYBOARD_SAFE_BOTTOM_VP;
 
@@ -41,9 +41,11 @@ export class KeyboardController {
   private textInputClient?: inputMethodEngine.TextInputClient;
   private pendingShow: boolean = false;
 
-  // ===== Telex composing (OpenKey-like) =====
+  // ===== Buffer mode (for Android VM compatibility) =====
+  private readonly bufferMode: boolean = true;
+
+  // ===== Telex composing/buffer =====
   private composingWord: string = '';
-  // modernOrthography=true (oà/uý), quickTelex=false (tuỳ bạn bật sau)
   private readonly telex: TelexEngine = new TelexEngine(true, false);
 
   // ===== Backspace hold-to-repeat =====
@@ -60,6 +62,11 @@ export class KeyboardController {
 
   private setIntervalId(handler: () => void, intervalMs: number): number {
     return setInterval(handler, intervalMs) as number;
+  }
+
+  // ===== UI Preview API =====
+  getPreviewText(): string {
+    return this.composingWord;
   }
 
   onCreate(context: InputMethodExtensionContext): void {
@@ -93,11 +100,7 @@ export class KeyboardController {
     this.stopBackspaceRepeat();
     this.resetComposing();
     this.pendingShow = false;
-    try {
-      this.panel?.hide();
-    } catch {
-      // ignore
-    }
+    try { this.panel?.hide(); } catch { /* ignore */ }
     this.panel = undefined;
     this.textInputClient = undefined;
   }
@@ -129,25 +132,7 @@ export class KeyboardController {
     }
   }
 
-  private async replaceComposing(newWord: string): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
-    if (!client) return;
-
-    const oldLen: number = this.composingWord.length;
-    try {
-      if (oldLen > 0) {
-        await client.deleteForward(oldLen);
-      }
-      if (newWord.length > 0) {
-        await client.insertText(newWord);
-      }
-      this.composingWord = newWord;
-    } catch {
-      // ignore
-    }
-  }
-
-  private async appendText(text: string): Promise<void> {
+  private async insertTextSafe(text: string): Promise<void> {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
 
@@ -158,46 +143,118 @@ export class KeyboardController {
     }
   }
 
+  private async deleteBeforeCursorOneByOne(count: number): Promise<void> {
+    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    if (!client) return;
+    if (count <= 0) return;
+
+    for (let i: number = 0; i < count; i++) {
+      try {
+        await client.deleteForward(1);
+      } catch {
+        break;
+      }
+    }
+  }
+
+  private isAsciiLetter(ch: string): boolean {
+    if (ch.length !== 1) return false;
+    const c: number = ch.charCodeAt(0);
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+  }
+
   /**
-   * Commit text with Telex processing (OpenKey-like).
-   * - letters a-z: apply Telex (tone/shape) inside current composing word
-   * - space / newline: commit and reset composing
+   * ✅ FIX QUAN TRỌNG CHO ANDROID VM:
+   * - Clear buffer NGAY LẬP TỨC (sync)
+   * - Chỉ insertText() 1 lần duy nhất: buf + tail
+   *
+   * Nhờ vậy:
+   * - không bị rơi dấu space
+   * - preview/buffer xoá ngay cả khi VM insert chậm
+   */
+  private async commitBufferAndTailSingleInsert(tail: string): Promise<void> {
+    const buf: string = this.composingWord;
+
+    // clear ngay để UI preview trống tức thì
+    this.composingWord = '';
+
+    const payload: string = buf + tail;
+    if (payload.length === 0) return;
+
+    await this.insertTextSafe(payload);
+  }
+
+  /**
+   * Buffer mode:
+   * - letters: Telex apply only in composingWord (no insert to app)
+   * - space/enter: commit composingWord + delimiter in ONE insert
+   * - non-letters: commit composingWord + that char in ONE insert
    */
   async commitText(text: string): Promise<void> {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+
+    // ⚠️ Dù không có client (VM bridge glitch), vẫn nên clear buffer khi commit boundary
+    // để preview không bị kẹt.
+    if (this.bufferMode && (text === ' ' || text === '\n')) {
+      // clear + try insert if client exists
+      if (!client) {
+        this.composingWord = '';
+        return;
+      }
+      await this.commitBufferAndTailSingleInsert(text);
+      return;
+    }
+
     if (!client) return;
 
+    // ---- buffer mode ----
+    if (this.bufferMode) {
+      if (text.length !== 1) {
+        await this.commitBufferAndTailSingleInsert(text);
+        return;
+      }
+
+      // Not letter => commit buffer + char (ONE insert)
+      if (!this.isAsciiLetter(text)) {
+        await this.commitBufferAndTailSingleInsert(text);
+        return;
+      }
+
+      // letter => apply telex to buffer only
+      const r = this.telex.apply(this.composingWord, text);
+      if (r.kind === TelexActionKind.Replace) {
+        this.composingWord = r.newWord; // oo -> ô in buffer
+        return;
+      }
+      this.composingWord = this.composingWord + text;
+      return;
+    }
+
+    // ---- legacy mode ----
     if (text === ' ' || text === '\n') {
-      // Word boundary
       this.resetComposing();
-      await this.appendText(text);
+      await this.insertTextSafe(text);
       return;
     }
 
     if (text.length !== 1) {
-      // Safety: any multi-char insert resets composing
       this.resetComposing();
-      await this.appendText(text);
+      await this.insertTextSafe(text);
       return;
     }
 
     const r = this.telex.apply(this.composingWord, text);
-
     if (r.kind === TelexActionKind.Replace) {
-      await this.replaceComposing(r.newWord);
+      await this.deleteBeforeCursorOneByOne(this.composingWord.length);
+      await this.insertTextSafe(r.newWord);
+      this.composingWord = r.newWord;
       return;
     }
 
-    // Append literal key
-    await this.appendText(text);
+    await this.insertTextSafe(text);
     this.composingWord = this.composingWord + text;
   }
 
-  /**
-   * Hold Backspace to repeat.
-   * UI gọi startBackspaceRepeat() ở TouchType.Down,
-   * stopBackspaceRepeat() ở TouchType.Up/Cancel.
-   */
   startBackspaceRepeat(): void {
     if (!this.textInputClient) return;
     if (this.backspaceHolding) return;
@@ -205,7 +262,6 @@ export class KeyboardController {
     this.backspaceHolding = true;
     this.clearBackspaceTimers();
 
-    // delete 1 immediately
     this.backspace();
 
     this.backspaceDelayTimerId = this.setTimeoutId(() => {
@@ -239,12 +295,13 @@ export class KeyboardController {
     const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
     if (!client) return;
 
-    // keep composingWord in sync (best-effort)
-    if (this.composingWord.length > 0) {
-      this.composingWord = this.composingWord.slice(0, this.composingWord.length - 1);
+    if (this.bufferMode) {
+      if (this.composingWord.length > 0) {
+        this.composingWord = this.composingWord.slice(0, this.composingWord.length - 1);
+        return;
+      }
     }
 
-    // Backspace = deleteForward (xóa ký tự trước con trỏ)
     try {
       await client.deleteForward(1);
     } catch {

@@ -3,17 +3,19 @@ import keyboardController from '../model/KeyboardControllerSingleton';
 import { KEYBOARD_ROWS, KeyData, KeyKind } from './KeyboardKeyData';
 
 class KbStyle {
-  // Màu nền bạn yêu cầu (pick từ ảnh): #242424
   bg: string = '#242424';
 
+  // Tăng nhẹ padding để layout giống bàn phím hệ thống hơn
   padding: number = 8;
-  safeBottom: number = 12; // phải khớp KEYBOARD_SAFE_BOTTOM_VP trong KeyboardController.ets
 
-  keyH: number = 48;
-  gap: number = 6;
-  radius: number = 12;
+  // GIỮ NGUYÊN: thanh pad dưới
+  safeBottom: number = 12;
 
-  // Key colors (giữ gần giống dark keyboard)
+  // Phím + khoảng cách giống bàn phím bên phải hơn
+  keyH: number = 44;
+  gap: number = 4;
+  radius: number = 6;
+
   keyBg: string = '#2C2C2E';
   keyBgPressed: string = '#3A3A3C';
 
@@ -23,9 +25,15 @@ class KbStyle {
   textColor: string = '#EDEDED';
   textSize: number = 18;
 
-  // Thanh hint trong spacebar (màu hơi ngả vàng như ảnh)
   spaceHint: string = '#B9B100';
   spaceHintAlpha: number = 0.55;
+
+  // Preview bar: giữ nhưng không làm nhỏ key nữa
+  previewBg: string = '#1F1F1F';
+  previewTextColor: string = '#EDEDED';
+  previewHintColor: string = '#9A9A9A';
+  previewH: number = 24;
+  previewRadius: number = 6;
 }
 
 @Entry
@@ -35,6 +43,31 @@ struct Index {
 
   @State private shiftOn: boolean = false;
   @State private pressedKeyId: string = '';
+
+  @State private previewText: string = '';
+  private previewTimerId: number = 0;
+
+  private syncPreview(): void {
+    const t: string = keyboardController.getPreviewText();
+    if (t !== this.previewText) {
+      this.previewText = t;
+    }
+  }
+
+  aboutToAppear(): void {
+    this.previewTimerId = setInterval(() => {
+      this.syncPreview();
+    }, 80) as number;
+
+    this.syncPreview();
+  }
+
+  aboutToDisappear(): void {
+    if (this.previewTimerId !== 0) {
+      try { clearInterval(this.previewTimerId); } catch { /* ignore */ }
+      this.previewTimerId = 0;
+    }
+  }
 
   private rowIndent(rowIdx: number): number {
     if (rowIdx === 1) return 14;
@@ -52,6 +85,7 @@ struct Index {
     if (k.kind === KeyKind.Backspace) return '⌫';
     if (k.kind === KeyKind.Enter) return '⏎';
     if (k.kind === KeyKind.Space) return '';
+    if (k.kind === KeyKind.Num123) return '123';
     return k.label;
   }
 
@@ -68,17 +102,31 @@ struct Index {
       this.shiftOn = !this.shiftOn;
       return;
     }
-    if (k.kind === KeyKind.Space) {
-      keyboardController.space();
+
+    // Placeholder: lần sau làm layout số
+    if (k.kind === KeyKind.Num123) {
+      // TODO: switch to numeric layout
       return;
     }
+
+    if (k.kind === KeyKind.Space) {
+      keyboardController.space();
+      this.previewText = '';
+      setTimeout(() => this.syncPreview(), 0);
+      return;
+    }
+
     if (k.kind === KeyKind.Enter) {
       keyboardController.enter();
+      this.previewText = '';
+      setTimeout(() => this.syncPreview(), 0);
       return;
     }
 
     const out: string = this.shiftOn ? k.value.toUpperCase() : k.value;
     keyboardController.commitText(out);
+
+    this.syncPreview();
 
     if (this.shiftOn) this.shiftOn = false;
   }
@@ -87,7 +135,6 @@ struct Index {
     if (e.type === TouchType.Down) {
       this.pressedKeyId = k.id;
 
-      // Giữ Backspace để xóa liên tục
       if (k.kind === KeyKind.Backspace) {
         keyboardController.startBackspaceRepeat();
       }
@@ -96,6 +143,7 @@ struct Index {
 
       if (k.kind === KeyKind.Backspace) {
         keyboardController.stopBackspaceRepeat();
+        this.syncPreview();
       }
     }
   }
@@ -104,7 +152,6 @@ struct Index {
   private KeyView(k: KeyData) {
     Stack() {
       if (k.kind === KeyKind.Space) {
-        // Spacebar: có hint bar ở giữa
         Row() {
           Blank()
           Stack()
@@ -134,8 +181,6 @@ struct Index {
       this.handleTouch(k, e);
     })
     .onClick(() => {
-      // Backspace đã xử lý bằng onTouch (Down/Up) để hỗ trợ giữ-xóa-liên-tục,
-      // tránh bị xóa 2 lần khi tap.
       if (k.kind !== KeyKind.Backspace) {
         this.onKey(k);
         this.pressedKeyId = '';
@@ -144,8 +189,34 @@ struct Index {
     .layoutWeight(k.weight);
   }
 
+  @Builder
+  private PreviewBar() {
+    Stack() {
+      if (this.previewText.length > 0) {
+        Text(this.previewText)
+          .fontSize(15)
+          .fontColor(this.s.previewTextColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .padding({ left: 10, right: 10 });
+      } else {
+        Text('Bảng gõ tạm')
+          .fontSize(12)
+          .fontColor(this.s.previewHintColor)
+          .padding({ left: 10, right: 10 });
+      }
+    }
+    .height(this.s.previewH)
+    .width('100%')
+    .borderRadius(this.s.previewRadius)
+    .backgroundColor(this.s.previewBg)
+    .margin({ bottom: this.s.gap });
+  }
+
   build() {
     Column() {
+      this.PreviewBar();
+
       ForEach(KEYBOARD_ROWS, (row: Array<KeyData>, rowIdx: number) => {
         Row() {
           ForEach(row, (k: KeyData) => {
@@ -155,16 +226,18 @@ struct Index {
         .width('100%')
         .justifyContent(FlexAlign.SpaceBetween)
         .padding({ left: this.rowIndent(rowIdx), right: this.rowIndent(rowIdx) })
-        .margin({ top: rowIdx === 0 ? 2 : this.s.gap });
-      }, (_: Array<KeyData>, idx: number) => String(idx));
+        // đồng đều khoảng cách hàng, hàng đầu tiên không cần +1 nữa
+        .margin({ top: rowIdx === 0 ? 0 : this.s.gap });
+      }, (_row: Array<KeyData>, idx: number) => String(idx));
     }
     .width('100%')
-    .height('100%') // quan trọng để nền phủ toàn panel
+    .height('100%')
     .backgroundColor(this.s.bg)
     .padding({
       left: this.s.padding,
       right: this.s.padding,
       top: this.s.padding,
+      // GIỮ NGUYÊN: pad dưới
       bottom: this.s.padding + this.s.safeBottom
     });
   }
