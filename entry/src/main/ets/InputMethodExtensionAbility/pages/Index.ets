@@ -13,7 +13,8 @@ class KbStyle {
 
   // Phím + khoảng cách giống bàn phím bên phải hơn
   keyH: number = 44;
-  gap: number = 4;
+  gapX: number = 5; // ngang giữa phím
+  gapY: number = 8; // dọc giữa các row
   radius: number = 6;
 
   keyBg: string = '#2C2C2E';
@@ -174,7 +175,7 @@ struct Index {
       }
     }
     .height(this.s.keyH)
-    .margin({ left: this.s.gap / 2, right: this.s.gap / 2 })
+    .margin({ left: this.s.gapX / 2, right: this.s.gapX / 2 })
     .borderRadius(this.s.radius)
     .backgroundColor(this.bgColorOf(k))
     .onTouch((e: TouchEvent) => {
@@ -210,7 +211,7 @@ struct Index {
     .width('100%')
     .borderRadius(this.s.previewRadius)
     .backgroundColor(this.s.previewBg)
-    .margin({ bottom: this.s.gap });
+    .margin({ bottom: this.s.gapY });
   }
 
   build() {
@@ -227,7 +228,7 @@ struct Index {
         .justifyContent(FlexAlign.SpaceBetween)
         .padding({ left: this.rowIndent(rowIdx), right: this.rowIndent(rowIdx) })
         // đồng đều khoảng cách hàng, hàng đầu tiên không cần +1 nữa
-        .margin({ top: rowIdx === 0 ? 0 : this.s.gap });
+        .margin({ top: rowIdx === 0 ? 0 : this.s.gapY });
       }, (_row: Array<KeyData>, idx: number) => String(idx));
     }
     .width('100%')
