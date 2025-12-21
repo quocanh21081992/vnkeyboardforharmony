@@ -1,6 +1,6 @@
 // entry/src/main/ets/InputMethodExtensionAbility/pages/Index.ets
 import keyboardController from '../model/KeyboardControllerSingleton';
-import { KEYBOARD_ROWS, KeyData, KeyKind } from './KeyboardKeyData';
+import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_123, KeyData, KeyKind } from './KeyboardKeyData';
 
 class KbStyle {
   bg: string = '#242424';
@@ -61,6 +61,9 @@ struct Index {
   @State private popupX: number = 0;
   @State private popupY: number = 0;
 
+  // ✅ layout mode
+  @State private isLayout123: boolean = false;
+
   // global root pos for popup coordinate conversion
   private rootGX: number = 0;
   private rootGY: number = 0;
@@ -77,7 +80,7 @@ struct Index {
   }
 
   private isFn(k: KeyData): boolean {
-    // ✅ Spacer không phải phím chức năng
+    // Spacer không phải phím chức năng
     return k.kind !== KeyKind.Char && k.kind !== KeyKind.Space && k.kind !== KeyKind.Spacer;
   }
 
@@ -99,6 +102,7 @@ struct Index {
     if (k.kind === KeyKind.Backspace) return '⌫';
     if (k.kind === KeyKind.Enter) return '⏎';
     if (k.kind === KeyKind.Num123) return '123';
+    if (k.kind === KeyKind.Abc) return 'ABC';
     if (k.kind === KeyKind.Space) return '';
     return k.label;
   }
@@ -106,13 +110,24 @@ struct Index {
   private onKey(k: KeyData): void {
     if (k.kind === KeyKind.Spacer) return;
 
-    if (k.kind === KeyKind.Shift) {
-      this.shiftOn = !this.shiftOn;
+    // ✅ chuyển layout
+    if (k.kind === KeyKind.Num123) {
+      this.isLayout123 = true;
+      this.shiftOn = false;
+      this.hidePopup();
+      this.pressedKeyId = '';
+      return;
+    }
+    if (k.kind === KeyKind.Abc) {
+      this.isLayout123 = false;
+      this.shiftOn = false;
+      this.hidePopup();
+      this.pressedKeyId = '';
       return;
     }
 
-    if (k.kind === KeyKind.Num123) {
-      // TODO: layout số sau
+    if (k.kind === KeyKind.Shift) {
+      this.shiftOn = !this.shiftOn;
       return;
     }
 
@@ -176,7 +191,7 @@ struct Index {
 
       this.showPopupForKey(k);
 
-      // ✅ Commit ngay ở DOWN (trừ Backspace) để tránh ClickRecognizer bị reject
+      // commit ngay ở DOWN (trừ Backspace)
       if (k.kind !== KeyKind.Backspace) {
         this.onKey(k);
       } else {
@@ -212,7 +227,6 @@ struct Index {
 
   @Builder
   private KeyView(k: KeyData) {
-    // ✅ KHÔNG dùng `return` trong Builder. Dùng if/else thuần UI.
     if (k.kind === KeyKind.Spacer) {
       Blank()
         .height(this.s.keyH)
@@ -261,38 +275,55 @@ struct Index {
 
   @Builder
   private PreviewBar() {
-    Stack() {
+    Row() {
       if (this.previewText.length > 0) {
         Text(this.previewText)
           .fontSize(15)
           .fontColor('#FFFFFF')
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .borderRadius(10)
           .backgroundColor('#1F1F1F')
           .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .offset({ x: 0, y: -4 }); // ✅ nắn lên cho khớp mốc popup "r"
       } else {
-        // ✅ FIX: Blank chỉ được dùng trong Row/Column/Flex
-        Row() { Blank().height(32) }.width('100%');
+        Blank();
       }
     }
     .width('100%')
-    .padding({ left: this.s.padding, right: this.s.padding, top: 6, bottom: 6 });
+    .height(this.s.keyH) // ✅ đúng 1 row phím
+    .padding({ left: this.s.padding, right: this.s.padding }) // ✅ không top/bottom
+    .alignItems(VerticalAlign.Center)
+    .justifyContent(FlexAlign.Center);
   }
+
 
   @Builder
   private KeyboardBody() {
     Column() {
-      ForEach(KEYBOARD_ROWS, (row: Array<KeyData>, ri: number) => {
-        Row() {
-          ForEach(row, (k: KeyData) => {
-            this.KeyView(k);
-          }, (k: KeyData) => k.id);
-        }
-        .width('100%')
-        .height(this.s.keyH)
-        .margin({ top: ri === 0 ? 0 : this.s.gapY });
-      }, (_row: Array<KeyData>, i: number) => String(i));
+      if (this.isLayout123) {
+        ForEach(KEYBOARD_ROWS_123, (row: Array<KeyData>, ri: number) => {
+          Row() {
+            ForEach(row, (k: KeyData) => {
+              this.KeyView(k);
+            }, (k: KeyData) => k.id);
+          }
+          .width('100%')
+          .height(this.s.keyH)
+          .margin({ top: ri === 0 ? 0 : this.s.gapY });
+        }, (_row: Array<KeyData>, i: number) => 's' + String(i));
+      } else {
+        ForEach(KEYBOARD_ROWS_MAIN, (row: Array<KeyData>, ri: number) => {
+          Row() {
+            ForEach(row, (k: KeyData) => {
+              this.KeyView(k);
+            }, (k: KeyData) => k.id);
+          }
+          .width('100%')
+          .height(this.s.keyH)
+          .margin({ top: ri === 0 ? 0 : this.s.gapY });
+        }, (_row: Array<KeyData>, i: number) => 'm' + String(i));
+      }
     }
     .width('100%')
     .padding({ left: this.s.padding, right: this.s.padding });
