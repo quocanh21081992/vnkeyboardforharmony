@@ -27,13 +27,13 @@ class KbStyle {
   spaceHintAlpha: number = 0.18;
 
   // popup preview
-  popupW: number = 36;
-  popupH: number = 44;
+  popupW: number = 30;
+  popupH: number = 34;
   popupGap: number = 6;
   popupRadius: number = 10;
   popupBg: string = '#3A3A3C';
   popupText: string = '#FFFFFF';
-  popupFont: number = 22;
+  popupFont: number = 18;
 }
 
 class KeyArea {
