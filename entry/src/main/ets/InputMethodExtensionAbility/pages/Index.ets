@@ -54,6 +54,8 @@ struct Index {
   // - capsOn: double-tap Shift => CapsLock (persist)
   @State private capsOn: boolean = false;
   @State private shiftOnce: boolean = false;
+  // ✅ Auto-cap: viết hoa chữ cái đầu tiên của câu / sau dấu kết câu
+  @State private autoCapNext: boolean = true;
 
   // pressed
   @State private pressedKeyId: string = '';
@@ -106,6 +108,9 @@ struct Index {
     // ✅ reset Shift/Caps
     this.capsOn = false;
     this.shiftOnce = false;
+    this.autoCapNext = true;
+    // ✅ đầu câu: bật shiftOnce để hiện layout chữ HOA
+    this.shiftOnce = true;
     this.lastShiftTapMs = 0;
 
     // ✅ reset UI transient states
@@ -119,6 +124,13 @@ struct Index {
 
   private syncPreview(): void {
     this.previewText = keyboardController.getPreviewText();
+  }
+
+
+
+  private isLetterChar(ch: string): boolean {
+    // ArkTS: không dùng \p{L}, dùng so sánh upper/lower để nhận diện ký tự chữ (kể cả 'đ')
+    return ch.length === 1 && (ch.toLowerCase() !== ch.toUpperCase());
   }
 
   private isFn(k: KeyData): boolean {
@@ -141,6 +153,8 @@ struct Index {
     if (k.kind === KeyKind.Spacer) return '';
     if (k.kind === KeyKind.Char) return k.label;
     if (k.kind === KeyKind.Shift) {
+      // user chủ động bấm Shift => tắt auto-cap cho chữ cái kế tiếp (giống bàn phím phổ biến)
+      this.autoCapNext = false;
       if (this.capsOn) return '⇪';
       if (this.shiftOnce) return '⇧•';
       return '⇧';
@@ -169,7 +183,8 @@ struct Index {
     if (k.kind === KeyKind.Abc) {
       this.isLayout123 = false;
       this.capsOn = false;
-      this.shiftOnce = false;
+      // nếu đang ở đầu câu (autoCapNext), bật shiftOnce để hiện layout chữ HOA
+      this.shiftOnce = this.autoCapNext;
       this.lastShiftTapMs = 0;
       this.hidePopup();
       this.pressedKeyId = '';
@@ -215,6 +230,11 @@ struct Index {
 
     if (k.kind === KeyKind.Enter) {
       keyboardController.enter();
+      // ✅ sau xuống dòng: bắt đầu câu mới
+      this.autoCapNext = true;
+      if (!this.isLayout123 && !this.capsOn) {
+        this.shiftOnce = true;
+      }
       this.previewText = '';
       setTimeout(() => this.syncPreview(), 0);
       return;
@@ -222,18 +242,30 @@ struct Index {
 
     let out: string = k.value;
 
-    // ✅ Shift/Caps phải áp dụng ngay cả khi UI chưa kịp re-render sang layout CAPS
-    if (!this.isLayout123 && (this.capsOn || this.shiftOnce)) {
-      if (/^[a-z]$/.test(out)) {
+    // ✅ Auto-cap / ShiftOnce / CapsLock: áp dụng trực tiếp lên ký tự gửi xuống TelexEngine
+    if (!this.isLayout123) {
+      const needUpper: boolean = (this.capsOn || this.shiftOnce || this.autoCapNext);
+      if (needUpper && this.isLetterChar(out)) {
         out = out.toUpperCase();
       }
     }
 
     keyboardController.commitText(out);
 
-    // ✅ Shift once chỉ áp dụng cho 1 ký tự chữ cái đầu tiên (a-z/A-Z)
-    if (!this.isLayout123 && this.shiftOnce && !this.capsOn) {
-      if (/^[a-zA-Z]$/.test(k.value)) {
+    // ✅ Dấu kết câu => chữ cái tiếp theo sẽ tự viết hoa
+    if (!this.isLayout123 && (k.value === '.' || k.value === '!' || k.value === '?')) {
+      this.autoCapNext = true;
+      if (!this.capsOn) {
+        this.shiftOnce = true; // hiển thị layout chữ HOA cho ký tự tiếp theo
+      }
+    }
+
+    // ✅ Tắt shiftOnce sau khi gõ 1 chữ cái; đồng thời tắt autoCapNext sau chữ cái đầu tiên của câu
+    if (!this.isLayout123 && this.isLetterChar(k.value)) {
+      if (this.autoCapNext) {
+        this.autoCapNext = false;
+      }
+      if (this.shiftOnce && !this.capsOn) {
         this.shiftOnce = false;
       }
     }
