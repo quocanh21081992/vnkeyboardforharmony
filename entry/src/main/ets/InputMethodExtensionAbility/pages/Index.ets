@@ -56,6 +56,8 @@ struct Index {
   @State private shiftOnce: boolean = false;
   // ✅ Auto-cap: viết hoa chữ cái đầu tiên của câu / sau dấu kết câu
   @State private autoCapNext: boolean = true;
+  // ✅ chỉ bật auto-cap sau khi ấn Space ngay sau . ! ?
+  @State private lastWasSentencePunc: boolean = false;
 
   // pressed
   @State private pressedKeyId: string = '';
@@ -111,6 +113,7 @@ struct Index {
     this.capsOn = false;
     this.shiftOnce = false;
     this.autoCapNext = true;
+    this.lastWasSentencePunc = false;
     // ✅ đầu câu: bật shiftOnce để hiện layout chữ HOA
     this.shiftOnce = true;
     this.lastShiftTapMs = 0;
@@ -235,6 +238,14 @@ struct Index {
 
     if (k.kind === KeyKind.Space) {
       keyboardController.space();
+      // ✅ Nếu vừa gõ . ! ? và bấm Space => tự bật viết hoa cho ký tự kế tiếp
+      if (this.lastWasSentencePunc) {
+        this.autoCapNext = true;
+        if (!this.isLayout123 && !this.capsOn) {
+          this.shiftOnce = true;
+        }
+      }
+      this.lastWasSentencePunc = false;
       this.previewText = '';
       setTimeout(() => this.syncPreview(), 0);
       return;
@@ -264,13 +275,12 @@ struct Index {
 
     keyboardController.commitText(out);
 
-    // ✅ Dấu kết câu => chữ cái tiếp theo sẽ tự viết hoa
-    if (!this.isLayout123 && (k.value === '.' || k.value === '!' || k.value === '?')) {
-      this.autoCapNext = true;
-      if (!this.capsOn) {
-        this.shiftOnce = true; // hiển thị layout chữ HOA cho ký tự tiếp theo
-      }
+    // ✅ Dấu kết câu: CHỈ bật auto-cap sau khi người dùng bấm Space ngay sau đó
+    if (out === '.' || out === '!' || out === '?') {
+      this.lastWasSentencePunc = true;
+      this.autoCapNext = false;
     } else {
+      this.lastWasSentencePunc = false;
       this.autoCapNext = false;
     }
 
@@ -325,6 +335,8 @@ struct Index {
       if (k.kind !== KeyKind.Backspace) {
         this.onKey(k);
       } else {
+        // ✅ Backspace có thể xoá dấu kết câu, tránh auto-cap sai
+        this.lastWasSentencePunc = false;
         keyboardController.startBackspaceRepeat();
       }
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
