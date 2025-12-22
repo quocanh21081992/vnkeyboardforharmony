@@ -38,7 +38,7 @@ function getPanelSizePx(): PanelSize {
 
 export class KeyboardController {
   private panel?: inputMethodEngine.Panel;
-  private textInputClient?: inputMethodEngine.TextInputClient;
+  private textInputClient?: inputMethodEngine.InputClient;
   private pendingShow: boolean = false;
 
 
@@ -117,7 +117,7 @@ export class KeyboardController {
     this.initPanel(context, ime);
 
     ime.on('inputStart',
-      (_kbCtrl: inputMethodEngine.KeyboardController, client: inputMethodEngine.TextInputClient) => {
+      (_kbCtrl: inputMethodEngine.KeyboardController, client: inputMethodEngine.InputClient) => {
         this.textInputClient = client;
         this.resetComposing();
         this.notifySessionStart();
@@ -181,7 +181,7 @@ export class KeyboardController {
   }
 
   private async insertTextSafe(text: string): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    const client: inputMethodEngine.InputClient | undefined = this.textInputClient;
     if (!client) return;
 
     try {
@@ -192,7 +192,7 @@ export class KeyboardController {
   }
 
   private async deleteBeforeCursorOneByOne(count: number): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    const client: inputMethodEngine.InputClient | undefined = this.textInputClient;
     if (!client) return;
     if (count <= 0) return;
 
@@ -235,7 +235,7 @@ export class KeyboardController {
    * - fallback: newline nếu enterKeyType là NONE/UNSPECIFIED hoặc lỗi
    */
   private async performEnterAction(): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    const client: inputMethodEngine.InputClient | undefined = this.textInputClient;
     if (!client) {
       this.resetComposing();
       return;
@@ -288,7 +288,7 @@ export class KeyboardController {
    * - non-letters: commit composingWord + that char in ONE insert
    */
   async commitText(text: string): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    const client: inputMethodEngine.InputClient | undefined = this.textInputClient;
 
     // boundary: thêm '.' ',' giống space/enter để khi mất client không kẹt preview
     if (this.bufferMode && (text === ' ' || text === '\n' || text === '.' || text === ',')) {
@@ -387,7 +387,7 @@ export class KeyboardController {
   }
 
   async backspace(): Promise<void> {
-    const client: inputMethodEngine.TextInputClient | undefined = this.textInputClient;
+    const client: inputMethodEngine.InputClient | undefined = this.textInputClient;
     if (!client) return;
 
     if (this.bufferMode) {

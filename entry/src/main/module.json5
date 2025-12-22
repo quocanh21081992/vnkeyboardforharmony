@@ -39,7 +39,7 @@
         "srcEntry": "./ets/InputMethodExtensionAbility/InputMethodService.ets",
         "type": "inputMethod",
         "exported": true,
-        "description": "English Keyboard",
+        "description": "Telex Keyboard",
         "icon": "$media:icon",
         "metadata": [
           {
