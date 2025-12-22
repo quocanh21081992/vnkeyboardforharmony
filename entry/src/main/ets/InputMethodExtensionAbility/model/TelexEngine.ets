@@ -593,6 +593,15 @@ export class TelexEngine {
       }
     }
 
+
+
+    // ✅ FIX: các vần 2 nguyên âm kết thúc bằng i/y -> đặt dấu ở nguyên âm đầu
+    // Ví dụ: "vài", "hỏi", "tuổi", "thủy", "tay", ...
+    const count: number = vei - vsi + 1;
+    if (count === 2) {
+      const lastBase: string = this.toBaseLetter(chars[vei]);
+      if (lastBase === 'i' || lastBase === 'y') return vsi;
+    }
     // ưu tiên nguyên âm đặc biệt trước
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
