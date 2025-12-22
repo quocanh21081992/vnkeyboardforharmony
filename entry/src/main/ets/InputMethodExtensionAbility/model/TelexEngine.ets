@@ -8,14 +8,8 @@ export enum TelexActionKind {
 
 export class TelexResult {
   kind: TelexActionKind = TelexActionKind.None;
-
-  // Insert: ký tự vừa gõ (vd: "o")
-  // Replace: full word mới (vd: "ô" hoặc "telex")
   text: string = '';
-
   // COMPAT: KeyboardController đang dùng newWord
-  // Insert: full word sau khi insert (currentWord + keyChar)
-  // Replace: full word mới
   newWord: string = '';
 }
 
@@ -41,7 +35,6 @@ class VowelInfo {
   tone: number = 0; // 0 none, 1..5
 }
 
-// ArkTS: tránh object-literal type {start,end}
 class VowelSpan {
   start: number = 0;
   end: number = 0;
@@ -49,7 +42,6 @@ class VowelSpan {
 
 export class TelexEngine {
   modernOrthography: boolean = true;
-
   private compatFlag: boolean = false;
 
   // COMPAT CONSTRUCTOR: KeyboardController gọi new TelexEngine(true, false)
@@ -61,7 +53,7 @@ export class TelexEngine {
   // COMPAT METHOD: KeyboardController gọi this.telex.apply(word, keyChar)
   apply(currentWord: string, keyChar: string): TelexResult {
     if (this.compatFlag) {
-      // no-op: chỉ để tránh warning never read
+      // no-op: tránh warning never read
     }
     return this.applyKey(currentWord, keyChar);
   }
@@ -74,6 +66,21 @@ export class TelexEngine {
       out.kind = TelexActionKind.None;
       out.text = currentWord;
       out.newWord = currentWord;
+      return out;
+    }
+
+    // ✅ dd => đ (kèm "late d": di + d => đi)
+    if (this.isDKey(keyChar)) {
+      const nextD: string = this.applyDKey(currentWord, keyChar);
+      if (nextD === currentWord) {
+        out.kind = TelexActionKind.Insert;
+        out.text = keyChar;
+        out.newWord = currentWord + keyChar;
+      } else {
+        out.kind = TelexActionKind.Replace;
+        out.text = nextD;
+        out.newWord = nextD;
+      }
       return out;
     }
 
@@ -125,7 +132,67 @@ export class TelexEngine {
     return c === 'a' || c === 'e' || c === 'o' || c === 'w';
   }
 
-  // ---------- Core vowel mapping ----------
+  private isDKey(ch: string): boolean {
+    return ch.toLowerCase() === 'd';
+  }
+
+  // ---------- dd => đ (with "late d" heuristic) ----------
+  private applyDKey(word: string, keyChar: string): string {
+    if (word.length === 0) return word;
+
+    const chars: Array<string> = word.split('');
+    const lastIdx: number = chars.length - 1;
+    const last: string = chars[lastIdx];
+    const k: string = keyChar;
+
+    // 1) Normal Telex dd at the end: d/D -> đ/Đ
+    if (last === 'd') {
+      chars[lastIdx] = 'đ';
+      return chars.join('');
+    }
+    if (last === 'D') {
+      chars[lastIdx] = 'Đ';
+      return chars.join('');
+    }
+
+    // toggle off: đ/Đ -> d/D + append d/D
+    if (last === 'đ') {
+      chars[lastIdx] = 'd';
+      return chars.join('') + k;
+    }
+    if (last === 'Đ') {
+      chars[lastIdx] = 'D';
+      return chars.join('') + k;
+    }
+
+    // 2) ✅ "late d": di + d => đi (đổi d đầu -> đ, không append d)
+    const first: string = chars[0];
+    const MAX_VI_SYLLABLE_LEN: number = 6; // có thể tăng lên 7-8 nếu muốn
+
+    if (chars.length <= MAX_VI_SYLLABLE_LEN) {
+      const startsWithD: boolean = (first === 'd' || first === 'D');
+      const hasDDash: boolean = (word.indexOf('đ') >= 0 || word.indexOf('Đ') >= 0);
+
+      if (startsWithD && !hasDDash) {
+        let hasVowel: boolean = false;
+        for (let i = 0; i < chars.length; i++) {
+          if (this.isVowelChar(chars[i])) {
+            hasVowel = true;
+            break;
+          }
+        }
+
+        if (hasVowel) {
+          chars[0] = (first === 'D') ? 'Đ' : 'đ';
+          return chars.join('');
+        }
+      }
+    }
+
+    return word;
+  }
+
+  // ---------- Vowel helpers ----------
   private toBaseLetter(ch: string): string {
     const info: VowelInfo | undefined = this.getVowelInfo(ch);
     if (!info) return ch.toLowerCase();
@@ -256,15 +323,34 @@ export class TelexEngine {
     }
   }
 
+  private isVowelChar(ch: string): boolean {
+    return this.getVowelInfo(ch) !== undefined;
+  }
+
   private setTone(ch: string, tone: number): string {
     const info: VowelInfo | undefined = this.getVowelInfo(ch);
     if (!info) return ch;
-    const base: string = info.base;
-    const group: VowelGroup = info.group;
-    const isUpper: boolean = (ch.toUpperCase() === ch);
 
-    const out: string = this.composeVowel(base, group, tone);
+    const isUpper: boolean = (ch.toUpperCase() === ch);
+    const out: string = this.composeVowel(info.base, info.group, tone);
     return isUpper ? out.toUpperCase() : out;
+  }
+
+  private setGroupKeepTone(ch: string, newGroup: VowelGroup): string {
+    const info: VowelInfo | undefined = this.getVowelInfo(ch);
+    if (!info) return ch;
+
+    const isUpper: boolean = (ch.toUpperCase() === ch);
+    const out: string = this.composeVowel(info.base, newGroup, info.tone);
+    return isUpper ? out.toUpperCase() : out;
+  }
+
+  private findLastIndexByBaseInSpan(chars: Array<string>, span: VowelSpan, base: string): number {
+    for (let i = span.end; i >= span.start; i--) {
+      const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
+      if (info && info.base === base) return i;
+    }
+    return -1;
   }
 
   private composeVowel(base: string, group: VowelGroup, tone: number): string {
@@ -300,38 +386,30 @@ export class TelexEngine {
     return base;
   }
 
-  // ---------- Apply tone key ----------
+  // ---------- Tone key ----------
   private applyToneKey(word: string, keyChar: string): string {
     const tone: number = this.toneOfKey(keyChar);
     if (tone === 0) return word;
 
     const chars: Array<string> = word.split('');
-
-    // ✅ lấy cụm nguyên âm CUỐI (fix telex -> telẽ thay vì tẽle)
     const span: VowelSpan | undefined = this.findVowelSpan(chars);
     if (!span) return word;
 
     let vsi: number = span.start;
     const vei: number = span.end;
 
-    // special case: "qu" và "gi"
+    // special case qu/gi
     if (vsi + 1 <= vei) {
       const b0: string = this.toBaseLetter(chars[vsi]);
 
-      // skip 'u' after q in "qu"
       if (b0 === 'u' && vsi - 1 >= 0) {
         const prev: string = chars[vsi - 1].toLowerCase();
-        if (prev === 'q') {
-          vsi = vsi + 1;
-        }
+        if (prev === 'q') vsi = vsi + 1;
       }
 
-      // skip 'i' after g in "gi"
       if (b0 === 'i' && vsi - 1 >= 0) {
         const prev2: string = chars[vsi - 1].toLowerCase();
-        if (prev2 === 'g') {
-          vsi = vsi + 1;
-        }
+        if (prev2 === 'g') vsi = vsi + 1;
       }
     }
 
@@ -341,20 +419,16 @@ export class TelexEngine {
     const vowelInfo: VowelInfo | undefined = this.getVowelInfo(chars[markPos]);
     if (!vowelInfo) return word;
 
-    // toggle off if same tone
     const isToggleOff: boolean = (vowelInfo.tone === tone);
     chars[markPos] = this.setTone(chars[markPos], isToggleOff ? 0 : tone);
 
-    // ✅ QUAN TRỌNG: nếu bấm tone key lần 2 để bỏ dấu -> append ký tự tone
-    // ví dụ: telẽ + x => telex
-    if (isToggleOff) {
-      return chars.join('') + keyChar;
-    }
+    // double-press tone key: bỏ dấu + vẫn thêm chữ
+    if (isToggleOff) return chars.join('') + keyChar;
 
     return chars.join('');
   }
 
-  // ===== Shape keys: aa/ee/oo and w rules (aw/ow/uw, uow->ươ) =====
+  // ---------- Shape keys ----------
   private applyShapeKey(word: string, keyChar: string): string {
     const k: string = keyChar;
     const kl: string = k.toLowerCase();
@@ -364,154 +438,116 @@ export class TelexEngine {
     const lastIdx: number = chars.length - 1;
     const last: string = chars[lastIdx];
 
-    // w: aw/ow/uw toggle, and uo + w <-> ươ
+    const toggleAt = (idx: number, groupOn: VowelGroup, groupOff: VowelGroup): string => {
+      const info: VowelInfo | undefined = this.getVowelInfo(chars[idx]);
+      if (!info) return word;
+
+      if (info.group === groupOn) {
+        chars[idx] = this.setGroupKeepTone(chars[idx], groupOff);
+        return chars.join('') + k; // toggle OFF + insert typed key
+      }
+      if (info.group === groupOff) {
+        chars[idx] = this.setGroupKeepTone(chars[idx], groupOn);
+        return chars.join(''); // toggle ON, không insert
+      }
+      return word;
+    };
+
+    const span: VowelSpan | undefined = this.findVowelSpan(chars);
+
     if (kl === 'w') {
-      // uo -> ươ (and toggle back)
-      if (chars.length >= 2) {
-        const c1: string = chars[chars.length - 2];
-        const c2: string = chars[chars.length - 1];
-        const b1: string = this.toBaseLetter(c1);
-        const b2: string = this.toBaseLetter(c2);
+      // uo + w <-> ươ (scan inside last vowel span)
+      if (span) {
+        for (let i = span.end; i - 1 >= span.start; i--) {
+          const b2: string = this.toBaseLetter(chars[i]);
+          const b1: string = this.toBaseLetter(chars[i - 1]);
+          if (b1 === 'u' && b2 === 'o') {
+            const i1: VowelInfo | undefined = this.getVowelInfo(chars[i - 1]);
+            const i2: VowelInfo | undefined = this.getVowelInfo(chars[i]);
+            if (!i1 || !i2) break;
 
-        if (b1 === 'u' && b2 === 'o') {
-          const i1: VowelInfo | undefined = this.getVowelInfo(c1);
-          const i2: VowelInfo | undefined = this.getVowelInfo(c2);
+            if (i1.group === VowelGroup.UW && i2.group === VowelGroup.OW) {
+              const toneKeep: number = i2.tone;
+              const uBase: string = (chars[i - 1].toUpperCase() === chars[i - 1]) ? 'U' : 'u';
+              const oBase: string = (chars[i].toUpperCase() === chars[i]) ? 'O' : 'o';
+              chars[i - 1] = uBase;
+              chars[i] = this.setTone(oBase, toneKeep);
+              return chars.join('') + k;
+            }
 
-          if (i1 && i2 && i1.group === VowelGroup.UW && i2.group === VowelGroup.OW) {
-            const toneKeep: number = i2.tone;
-            const uBase: string = (c1.toUpperCase() === c1) ? 'U' : 'u';
-            const oBase: string = (c2.toUpperCase() === c2) ? 'O' : 'o';
-            chars[chars.length - 2] = uBase;
-            chars[chars.length - 1] = this.setTone(oBase, toneKeep);
-            return chars.join('') + k; // toggle OFF + insert typed key
-          } else {
-            const toneKeep2: number = i2 ? i2.tone : 0;
+            const toneKeep2: number = i2.tone;
             const uNew: string = this.composeVowel('u', VowelGroup.UW, 0);
             const oNew: string = this.composeVowel('o', VowelGroup.OW, toneKeep2);
-            chars[chars.length - 2] = (c1.toUpperCase() === c1) ? uNew.toUpperCase() : uNew;
-            chars[chars.length - 1] = (c2.toUpperCase() === c2) ? oNew.toUpperCase() : oNew;
+            chars[i - 1] = (chars[i - 1].toUpperCase() === chars[i - 1]) ? uNew.toUpperCase() : uNew;
+            chars[i] = (chars[i].toUpperCase() === chars[i]) ? oNew.toUpperCase() : oNew;
             return chars.join('');
           }
         }
       }
 
-      // single-letter toggles: a->ă, o->ơ, u->ư (toggle back to base)
       const infoLast: VowelInfo | undefined = this.getVowelInfo(last);
-      if (!infoLast) return word;
-
-      const toneKeep3: number = infoLast.tone;
-      const isUpper: boolean = (last.toUpperCase() === last);
-
-      // a <-> ă
-      if (infoLast.base === 'a') {
-        if (infoLast.group === VowelGroup.AW) {
-          const aBase: string = isUpper ? 'A' : 'a';
-          chars[lastIdx] = this.setTone(aBase, toneKeep3);
-          return chars.join('') + k;
-        }
-        if (infoLast.group === VowelGroup.A) {
-          const aw: string = this.composeVowel('a', VowelGroup.AW, toneKeep3);
-          chars[lastIdx] = isUpper ? aw.toUpperCase() : aw;
-          return chars.join('');
-        }
+      if (infoLast) {
+        if (infoLast.base === 'a') return toggleAt(lastIdx, VowelGroup.AW, VowelGroup.A);
+        if (infoLast.base === 'o') return toggleAt(lastIdx, VowelGroup.OW, VowelGroup.O);
+        if (infoLast.base === 'u') return toggleAt(lastIdx, VowelGroup.UW, VowelGroup.U);
       }
 
-      // o <-> ơ
-      if (infoLast.base === 'o') {
-        if (infoLast.group === VowelGroup.OW) {
-          const oBase2: string = isUpper ? 'O' : 'o';
-          chars[lastIdx] = this.setTone(oBase2, toneKeep3);
-          return chars.join('') + k;
+      if (span) {
+        const idxA: number = this.findLastIndexByBaseInSpan(chars, span, 'a');
+        if (idxA >= 0) {
+          const rA: string = toggleAt(idxA, VowelGroup.AW, VowelGroup.A);
+          if (rA !== word) return rA;
         }
-        if (infoLast.group === VowelGroup.O) {
-          const ow: string = this.composeVowel('o', VowelGroup.OW, toneKeep3);
-          chars[lastIdx] = isUpper ? ow.toUpperCase() : ow;
-          return chars.join('');
+        const idxO: number = this.findLastIndexByBaseInSpan(chars, span, 'o');
+        if (idxO >= 0) {
+          const rO: string = toggleAt(idxO, VowelGroup.OW, VowelGroup.O);
+          if (rO !== word) return rO;
         }
-      }
-
-      // u <-> ư
-      if (infoLast.base === 'u') {
-        if (infoLast.group === VowelGroup.UW) {
-          const uBase2: string = isUpper ? 'U' : 'u';
-          chars[lastIdx] = this.setTone(uBase2, toneKeep3);
-          return chars.join('') + k;
-        }
-        if (infoLast.group === VowelGroup.U) {
-          const uw: string = this.composeVowel('u', VowelGroup.UW, toneKeep3);
-          chars[lastIdx] = isUpper ? uw.toUpperCase() : uw;
-          return chars.join('');
+        const idxU: number = this.findLastIndexByBaseInSpan(chars, span, 'u');
+        if (idxU >= 0) {
+          const rU: string = toggleAt(idxU, VowelGroup.UW, VowelGroup.U);
+          if (rU !== word) return rU;
         }
       }
 
       return word;
     }
 
-    // aa toggle: a <-> â
     if (kl === 'a') {
       const infoLast: VowelInfo | undefined = this.getVowelInfo(last);
-      if (!infoLast) return word;
-
-      const toneKeep: number = infoLast.tone;
-      const isUpper: boolean = (last.toUpperCase() === last);
-
-      if (infoLast.base === 'a') {
-        if (infoLast.group === VowelGroup.AA) {
-          const aBase: string = isUpper ? 'A' : 'a';
-          chars[lastIdx] = this.setTone(aBase, toneKeep);
-          return chars.join('') + k;
-        }
-        if (infoLast.group === VowelGroup.A) {
-          const aa: string = this.composeVowel('a', VowelGroup.AA, toneKeep);
-          chars[lastIdx] = isUpper ? aa.toUpperCase() : aa;
-          return chars.join('');
-        }
+      if (infoLast && infoLast.base === 'a') {
+        const r: string = toggleAt(lastIdx, VowelGroup.AA, VowelGroup.A);
+        if (r !== word) return r;
+      }
+      if (span) {
+        const idx: number = this.findLastIndexByBaseInSpan(chars, span, 'a');
+        if (idx >= 0) return toggleAt(idx, VowelGroup.AA, VowelGroup.A);
       }
       return word;
     }
 
-    // ee toggle: e <-> ê
     if (kl === 'e') {
       const infoLast: VowelInfo | undefined = this.getVowelInfo(last);
-      if (!infoLast) return word;
-
-      const toneKeep: number = infoLast.tone;
-      const isUpper: boolean = (last.toUpperCase() === last);
-
-      if (infoLast.base === 'e') {
-        if (infoLast.group === VowelGroup.EE) {
-          const eBase: string = isUpper ? 'E' : 'e';
-          chars[lastIdx] = this.setTone(eBase, toneKeep);
-          return chars.join('') + k;
-        }
-        if (infoLast.group === VowelGroup.E) {
-          const ee: string = this.composeVowel('e', VowelGroup.EE, toneKeep);
-          chars[lastIdx] = isUpper ? ee.toUpperCase() : ee;
-          return chars.join('');
-        }
+      if (infoLast && infoLast.base === 'e') {
+        const r: string = toggleAt(lastIdx, VowelGroup.EE, VowelGroup.E);
+        if (r !== word) return r;
+      }
+      if (span) {
+        const idx: number = this.findLastIndexByBaseInSpan(chars, span, 'e');
+        if (idx >= 0) return toggleAt(idx, VowelGroup.EE, VowelGroup.E);
       }
       return word;
     }
 
-    // oo toggle: o <-> ô
     if (kl === 'o') {
       const infoLast: VowelInfo | undefined = this.getVowelInfo(last);
-      if (!infoLast) return word;
-
-      const toneKeep: number = infoLast.tone;
-      const isUpper: boolean = (last.toUpperCase() === last);
-
-      if (infoLast.base === 'o') {
-        if (infoLast.group === VowelGroup.OO) {
-          const oBase: string = isUpper ? 'O' : 'o';
-          chars[lastIdx] = this.setTone(oBase, toneKeep);
-          return chars.join('') + k;
-        }
-        if (infoLast.group === VowelGroup.O) {
-          const oo: string = this.composeVowel('o', VowelGroup.OO, toneKeep);
-          chars[lastIdx] = isUpper ? oo.toUpperCase() : oo;
-          return chars.join('');
-        }
+      if (infoLast && infoLast.base === 'o') {
+        const r: string = toggleAt(lastIdx, VowelGroup.OO, VowelGroup.O);
+        if (r !== word) return r;
+      }
+      if (span) {
+        const idx: number = this.findLastIndexByBaseInSpan(chars, span, 'o');
+        if (idx >= 0) return toggleAt(idx, VowelGroup.OO, VowelGroup.O);
       }
       return word;
     }
@@ -519,12 +555,7 @@ export class TelexEngine {
     return word;
   }
 
-  // ---------- Vowel span & marking rules ----------
-  private isVowelChar(ch: string): boolean {
-    return this.getVowelInfo(ch) !== undefined;
-  }
-
-  // ✅ lấy cụm nguyên âm CUỐI trong word (scan từ phải sang trái)
+  // ---------- Vowel span ----------
   private findVowelSpan(chars: Array<string>): VowelSpan | undefined {
     let endIdx: number = -1;
     for (let i = chars.length - 1; i >= 0; i--) {
@@ -537,11 +568,8 @@ export class TelexEngine {
 
     let startIdx: number = endIdx;
     for (let i = endIdx - 1; i >= 0; i--) {
-      if (this.isVowelChar(chars[i])) {
-        startIdx = i;
-      } else {
-        break;
-      }
+      if (this.isVowelChar(chars[i])) startIdx = i;
+      else break;
     }
 
     const span: VowelSpan = new VowelSpan();
@@ -550,38 +578,47 @@ export class TelexEngine {
     return span;
   }
 
+  // ---------- Tone placement ----------
   private findToneMarkPosition(chars: Array<string>, vsi: number, vei: number): number {
     if (vsi > vei) return -1;
+
+    // ✅ FIX: cụm "ươ" (ư + ơ) luôn đặt dấu ở "ơ" (OW), không phải "ư" (UW)
+    for (let i = vsi; i < vei; i++) {
+      const a: VowelInfo | undefined = this.getVowelInfo(chars[i]);
+      const b: VowelInfo | undefined = this.getVowelInfo(chars[i + 1]);
+      if (a && b && a.base === 'u' && a.group === VowelGroup.UW && b.base === 'o' && b.group === VowelGroup.OW) {
+        return i + 1; // index của "ơ"
+      }
+    }
 
     // ưu tiên nguyên âm đặc biệt trước
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.EE) return i; // ê
+      if (info && info.group === VowelGroup.EE) return i;
     }
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.AA) return i; // â
+      if (info && info.group === VowelGroup.AA) return i;
     }
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.AW) return i; // ă
+      if (info && info.group === VowelGroup.AW) return i;
+    }
+    // (giữ UW ở đây vẫn OK vì đã special-case ươ ở trên)
+    for (let i = vsi; i <= vei; i++) {
+      const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
+      if (info && info.group === VowelGroup.UW) return i;
     }
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.UW) return i; // ư
+      if (info && info.group === VowelGroup.OW) return i;
     }
     for (let i = vsi; i <= vei; i++) {
       const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.OW) return i; // ơ
-    }
-    for (let i = vsi; i <= vei; i++) {
-      const info: VowelInfo | undefined = this.getVowelInfo(chars[i]);
-      if (info && info.group === VowelGroup.OO) return i; // ô
+      if (info && info.group === VowelGroup.OO) return i;
     }
 
-    return this.modernOrthography
-      ? this.pickModern(chars, vsi, vei)
-      : this.pickOld(vsi, vei);
+    return this.modernOrthography ? this.pickModern(chars, vsi, vei) : this.pickOld(vsi, vei);
   }
 
   private pickOld(vsi: number, vei: number): number {
@@ -602,7 +639,11 @@ export class TelexEngine {
 
     if (count === 3) {
       const p: string = b0 + b1 + b2;
-      if (p === 'oai' || p === 'uyu' || p === 'oeo' || p === 'uya') {
+
+      // các cụm hay gặp đặt dấu ở nguyên âm giữa
+      if (p === 'oai' || p === 'oeo' || p === 'uyu' || p === 'uya'
+        || p === 'uoi' || p === 'uou' || p === 'uay'
+        || p === 'ieu' || p === 'yeu') {
         pos = vsi + 1;
       } else {
         pos = vei;
@@ -611,18 +652,27 @@ export class TelexEngine {
     }
 
     if (count === 2) {
+      // oa/oe/uy: mark vowel 2
       if ((b0 === 'o' && (b1 === 'a' || b1 === 'e')) || (b0 === 'u' && b1 === 'y')) {
         pos = vsi + 1;
       }
+      // uo: mark vowel 2
       if (b0 === 'u' && b1 === 'o') {
         pos = vsi + 1;
       }
+      // ia/iu/io: thường mark i
       if (b0 === 'i' && (b1 === 'a' || b1 === 'u' || b1 === 'o')) {
         pos = vsi;
       }
+      // ua: thường mark u
       if (b0 === 'u' && b1 === 'a') {
         pos = vsi;
       }
+      // ao/au/ay/eo/eu: đặt dấu ở nguyên âm đầu (fix "nào")
+      if ((b0 === 'a' || b0 === 'e') && (b1 === 'o' || b1 === 'u' || b1 === 'y')) {
+        pos = vsi;
+      }
+
       return pos;
     }
 
