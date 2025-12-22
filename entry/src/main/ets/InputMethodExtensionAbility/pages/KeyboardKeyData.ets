@@ -94,6 +94,60 @@ export const KEYBOARD_ROWS_MAIN: Array<Array<KeyData>> = [
   ]
 ];
 
+export const KEYBOARD_ROWS_CAPS: Array<Array<KeyData>> = [
+  // row 0 (QWERTYUIOP)
+  [
+    k('q', KeyKind.Char, 'Q', 'Q', 1),
+    k('w', KeyKind.Char, 'W', 'W', 1),
+    k('e', KeyKind.Char, 'E', 'E', 1),
+    k('r', KeyKind.Char, 'R', 'R', 1),
+    k('t', KeyKind.Char, 'T', 'T', 1),
+    k('y', KeyKind.Char, 'Y', 'Y', 1),
+    k('u', KeyKind.Char, 'U', 'U', 1),
+    k('i', KeyKind.Char, 'I', 'I', 1),
+    k('o', KeyKind.Char, 'O', 'O', 1),
+    k('p', KeyKind.Char, 'P', 'P', 1)
+  ],
+
+  // row 1 (ASDFGHJKL): 0.5 + 9 + 0.5 = 10u
+  [
+    sp('spacer_row2_l', 0.5),
+    k('a', KeyKind.Char, 'A', 'A', 1),
+    k('s', KeyKind.Char, 'S', 'S', 1),
+    k('d', KeyKind.Char, 'D', 'D', 1),
+    k('f', KeyKind.Char, 'F', 'F', 1),
+    k('g', KeyKind.Char, 'G', 'G', 1),
+    k('h', KeyKind.Char, 'H', 'H', 1),
+    k('j', KeyKind.Char, 'J', 'J', 1),
+    k('k', KeyKind.Char, 'K', 'K', 1),
+    k('l', KeyKind.Char, 'L', 'L', 1),
+    sp('spacer_row2_r', 0.5)
+  ],
+
+  // row 2 (CAPS zxcvbnm backspace): 1.5 + 7 + 1.5 = 10u
+  [
+    k('shift', KeyKind.Shift, '⇧', '', 1.5),
+    k('z', KeyKind.Char, 'Z', 'Z', 1),
+    k('x', KeyKind.Char, 'X', 'X', 1),
+    k('c', KeyKind.Char, 'C', 'C', 1),
+    k('v', KeyKind.Char, 'V', 'V', 1),
+    k('b', KeyKind.Char, 'B', 'B', 1),
+    k('n', KeyKind.Char, 'N', 'N', 1),
+    k('m', KeyKind.Char, 'M', 'M', 1),
+    k('backspace', KeyKind.Backspace, '⌫', '', 1.5)
+  ],
+
+  // row 3 (bottom)
+  [
+    k('num123', KeyKind.Num123, '123', '', 1.5),
+    k('comma', KeyKind.Char, ',', ',', 1.0),
+    k('space', KeyKind.Space, '', ' ', 5.0),
+    k('dot', KeyKind.Char, '.', '.', 1.0),
+    k('enter', KeyKind.Enter, '⏎', '\n', 1.5)
+  ]
+];
+
+
 /**
  * ✅ Layout 123 / ký tự (giống bố cục ảnh, nhưng KHÔNG cần phím 1234/page2)
  * Row 0: 1..0

@@ -1,6 +1,6 @@
 // entry/src/main/ets/InputMethodExtensionAbility/pages/Index.ets
 import keyboardController from '../model/KeyboardControllerSingleton';
-import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_123, KeyData, KeyKind } from './KeyboardKeyData';
+import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_CAPS, KEYBOARD_ROWS_123, KeyData, KeyKind } from './KeyboardKeyData';
 
 class KbStyle {
   bg: string = '#242424';
@@ -49,8 +49,11 @@ struct Index {
   private s: KbStyle = new KbStyle();
 
   @State private previewText: string = '';
-
-  private shiftOn: boolean = false;
+  // ✅ Shift behavior:
+  // - shiftOnce: tap Shift once => uppercase for next letter only
+  // - capsOn: double-tap Shift => CapsLock (persist)
+  @State private capsOn: boolean = false;
+  @State private shiftOnce: boolean = false;
 
   // pressed
   @State private pressedKeyId: string = '';
@@ -64,6 +67,12 @@ struct Index {
   // ✅ layout mode
   @State private isLayout123: boolean = false;
 
+  // double-tap Shift detection
+  private lastShiftTapMs: number = 0;
+  private SHIFT_DOUBLE_TAP_MS: number = 320;
+
+  private sessionStartCb?: () => void;
+
   // global root pos for popup coordinate conversion
   private rootGX: number = 0;
   private rootGY: number = 0;
@@ -72,8 +81,41 @@ struct Index {
   private keyAreas: Map<string, KeyArea> = new Map();
 
   aboutToAppear() {
+    if (!this.sessionStartCb) {
+      this.sessionStartCb = () => {
+        this.resetUiState();
+      };
+      keyboardController.addSessionStartListener(this.sessionStartCb);
+    }
+
+    // ✅ lần đầu render cũng reset luôn
+    this.resetUiState();
+  }
+
+  aboutToDisappear() {
+    if (this.sessionStartCb) {
+      keyboardController.removeSessionStartListener(this.sessionStartCb);
+      this.sessionStartCb = undefined;
+    }
+  }
+
+  private resetUiState(): void {
+    // ✅ luôn mở bàn phím ở layout ABC
+    this.isLayout123 = false;
+
+    // ✅ reset Shift/Caps
+    this.capsOn = false;
+    this.shiftOnce = false;
+    this.lastShiftTapMs = 0;
+
+    // ✅ reset UI transient states
+    this.pressedKeyId = '';
+    this.hidePopup();
+
+    // sync preview from controller (sau inputStart controller đã reset composing)
     this.previewText = keyboardController.getPreviewText();
   }
+
 
   private syncPreview(): void {
     this.previewText = keyboardController.getPreviewText();
@@ -97,8 +139,12 @@ struct Index {
 
   private labelOf(k: KeyData): string {
     if (k.kind === KeyKind.Spacer) return '';
-    if (k.kind === KeyKind.Char) return this.shiftOn ? k.label.toUpperCase() : k.label;
-    if (k.kind === KeyKind.Shift) return '⇧';
+    if (k.kind === KeyKind.Char) return k.label;
+    if (k.kind === KeyKind.Shift) {
+      if (this.capsOn) return '⇪';
+      if (this.shiftOnce) return '⇧•';
+      return '⇧';
+    }
     if (k.kind === KeyKind.Backspace) return '⌫';
     if (k.kind === KeyKind.Enter) return '⏎';
     if (k.kind === KeyKind.Num123) return '123';
@@ -113,21 +159,50 @@ struct Index {
     // ✅ chuyển layout
     if (k.kind === KeyKind.Num123) {
       this.isLayout123 = true;
-      this.shiftOn = false;
+      this.capsOn = false;
+      this.shiftOnce = false;
+      this.lastShiftTapMs = 0;
       this.hidePopup();
       this.pressedKeyId = '';
       return;
     }
     if (k.kind === KeyKind.Abc) {
       this.isLayout123 = false;
-      this.shiftOn = false;
+      this.capsOn = false;
+      this.shiftOnce = false;
+      this.lastShiftTapMs = 0;
       this.hidePopup();
       this.pressedKeyId = '';
       return;
     }
 
     if (k.kind === KeyKind.Shift) {
-      this.shiftOn = !this.shiftOn;
+      // ✅ Shift 1 lần => viết hoa 1 chữ (shiftOnce)
+      // ✅ Double-tap Shift => CapsLock (capsOn)
+      if (!this.isLayout123) {
+        const now: number = Date.now();
+        const delta: number = now - this.lastShiftTapMs;
+
+        if (delta <= this.SHIFT_DOUBLE_TAP_MS) {
+          // double-tap => toggle CapsLock
+          this.capsOn = !this.capsOn;
+          this.shiftOnce = false;
+          this.lastShiftTapMs = 0;
+        } else {
+          // single tap
+          if (this.capsOn) {
+            // nếu đang CapsLock, tap 1 cái để tắt
+            this.capsOn = false;
+            this.shiftOnce = false;
+          } else {
+            // bật/tắt shiftOnce
+            this.shiftOnce = !this.shiftOnce;
+          }
+          this.lastShiftTapMs = now;
+        }
+      }
+      this.hidePopup();
+      this.pressedKeyId = '';
       return;
     }
 
@@ -145,11 +220,25 @@ struct Index {
       return;
     }
 
-    const out: string = this.shiftOn ? k.value.toUpperCase() : k.value;
+    let out: string = k.value;
+
+    // ✅ Shift/Caps phải áp dụng ngay cả khi UI chưa kịp re-render sang layout CAPS
+    if (!this.isLayout123 && (this.capsOn || this.shiftOnce)) {
+      if (/^[a-z]$/.test(out)) {
+        out = out.toUpperCase();
+      }
+    }
+
     keyboardController.commitText(out);
 
+    // ✅ Shift once chỉ áp dụng cho 1 ký tự chữ cái đầu tiên (a-z/A-Z)
+    if (!this.isLayout123 && this.shiftOnce && !this.capsOn) {
+      if (/^[a-zA-Z]$/.test(k.value)) {
+        this.shiftOnce = false;
+      }
+    }
+
     this.syncPreview();
-    if (this.shiftOn) this.shiftOn = false;
   }
 
   private lenToNumber(v: Length | undefined): number {
@@ -273,6 +362,11 @@ struct Index {
     }
   }
 
+
+  private getAbcRows(): Array<Array<KeyData>> {
+    return (this.capsOn || this.shiftOnce) ? KEYBOARD_ROWS_CAPS : KEYBOARD_ROWS_MAIN;
+  }
+
   @Builder
   private PreviewBar() {
     Row() {
@@ -313,7 +407,7 @@ struct Index {
           .margin({ top: ri === 0 ? 0 : this.s.gapY });
         }, (_row: Array<KeyData>, i: number) => 's' + String(i));
       } else {
-        ForEach(KEYBOARD_ROWS_MAIN, (row: Array<KeyData>, ri: number) => {
+        ForEach(this.getAbcRows(), (row: Array<KeyData>, ri: number) => {
           Row() {
             ForEach(row, (k: KeyData) => {
               this.KeyView(k);

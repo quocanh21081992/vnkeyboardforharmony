@@ -41,6 +41,36 @@ export class KeyboardController {
   private textInputClient?: inputMethodEngine.TextInputClient;
   private pendingShow: boolean = false;
 
+
+  // ===== UI listeners (Index.ets) =====
+  private sessionStartListeners: Array<() => void> = [];
+
+  addSessionStartListener(cb: () => void): void {
+    for (let i = 0; i < this.sessionStartListeners.length; i++) {
+      if (this.sessionStartListeners[i] === cb) return;
+    }
+    this.sessionStartListeners.push(cb);
+  }
+
+  removeSessionStartListener(cb: () => void): void {
+    const next: Array<() => void> = [];
+    for (let i = 0; i < this.sessionStartListeners.length; i++) {
+      const fn = this.sessionStartListeners[i];
+      if (fn !== cb) next.push(fn);
+    }
+    this.sessionStartListeners = next;
+  }
+
+  private notifySessionStart(): void {
+    for (let i = 0; i < this.sessionStartListeners.length; i++) {
+      try {
+        this.sessionStartListeners[i]();
+      } catch (e) {
+        // ignore
+      }
+    }
+  }
+
   // ===== Buffer mode (for Android VM compatibility) =====
   private readonly bufferMode: boolean = true;
 
@@ -90,6 +120,7 @@ export class KeyboardController {
       (_kbCtrl: inputMethodEngine.KeyboardController, client: inputMethodEngine.TextInputClient) => {
         this.textInputClient = client;
         this.resetComposing();
+        this.notifySessionStart();
 
         if (this.panel) {
           this.panel.show();
