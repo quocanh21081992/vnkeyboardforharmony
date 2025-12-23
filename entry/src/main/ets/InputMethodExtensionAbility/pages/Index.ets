@@ -369,7 +369,7 @@ struct Index {
     .height(this.s.popupH)
     .borderRadius(this.s.popupRadius)
     .backgroundColor(this.s.popupBg)
-    .border({ width: 1, color: this.s.bubbleBorder })
+    .border({ width: 0 })
     .position({ x: this.popupX, y: this.popupY })
     .enabled(false);
   }
@@ -441,7 +441,7 @@ struct Index {
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .borderRadius(10)
           .backgroundColor(this.s.previewBubbleBg)
-          .border({ width: 1, color: this.s.bubbleBorder })
+          .border({ width: 0 })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .offset({ x: 0, y: 0 });
