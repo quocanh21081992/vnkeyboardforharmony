@@ -51,6 +51,11 @@
     {
       "name": "kb_text_primary",
       "value": "#000000"
-    }
+    },
+    { "name": "page_bg", "value": "#F5F6FA" },
+    { "name": "card_bg", "value": "#FFFFFF" },
+    { "name": "text_primary", "value": "#111111" },
+    { "name": "text_secondary", "value": "#4B5563" },
+    { "name": "divider", "value": "#E6E8EE" }
   ]
 }
