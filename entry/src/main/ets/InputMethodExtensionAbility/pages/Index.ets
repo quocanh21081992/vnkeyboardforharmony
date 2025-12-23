@@ -3,7 +3,8 @@ import keyboardController from '../model/KeyboardControllerSingleton';
 import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_CAPS, KEYBOARD_ROWS_123, KEYBOARD_ROWS_123_MORE, KeyData, KeyKind } from './KeyboardKeyData';
 
 class KbStyle {
-  bg: string = '#242424';
+  // ✅ Dùng resource để hệ thống tự đổi theo Light/Dark mode (base/ & dark/).
+  bg: ResourceColor = $r('app.color.kb_bg');
 
   padding: number = 2;
   safeBottom: number = 12;
@@ -13,17 +14,17 @@ class KbStyle {
   gapY: number = 8;
   radius: number = 6;
 
-  keyBg: string = '#2C2C2E';
-  keyBgPressed: string = '#3A3A3C';
+  keyBg: ResourceColor = $r('app.color.kb_key_bg');
+  keyBgPressed: ResourceColor = $r('app.color.kb_key_bg_pressed');
 
-  keyBgFn: string = '#2A2A2C';
-  keyBgFnPressed: string = '#3A3A3C';
+  keyBgFn: ResourceColor = $r('app.color.kb_key_fn_bg');
+  keyBgFnPressed: ResourceColor = $r('app.color.kb_key_fn_bg_pressed');
 
   textSize: number = 18;
-  textColor: string = '#FFFFFF';
+  textColor: ResourceColor = $r('app.color.kb_text_primary');
 
   // space hint
-  spaceHint: string = '#FFFFFF';
+  spaceHint: ResourceColor = $r('app.color.kb_space_hint');
   spaceHintAlpha: number = 0.18;
 
   // popup preview
@@ -31,9 +32,16 @@ class KbStyle {
   popupH: number = 34;
   popupGap: number = 6;
   popupRadius: number = 10;
-  popupBg: string = '#3A3A3C';
-  popupText: string = '#FFFFFF';
+  popupBg: ResourceColor = $r('app.color.kb_popup_bg');
+  popupText: ResourceColor = $r('app.color.kb_popup_text');
   popupFont: number = 18;
+
+  // preview bubble
+  previewBubbleBg: ResourceColor = $r('app.color.kb_preview_bubble_bg');
+  previewText: ResourceColor = $r('app.color.kb_preview_text');
+
+  // border (Light mode có viền, Dark mode trong suốt)
+  bubbleBorder: ResourceColor = $r('app.color.kb_bubble_border');
 }
 
 class KeyArea {
@@ -140,7 +148,7 @@ struct Index {
     return k.kind !== KeyKind.Char && k.kind !== KeyKind.Space && k.kind !== KeyKind.Spacer;
   }
 
-  private bgColorOf(k: KeyData): string {
+  private bgColorOf(k: KeyData): ResourceColor {
     const pressed: boolean = this.pressedKeyId === k.id;
     if (this.isFn(k)) return pressed ? this.s.keyBgFnPressed : this.s.keyBgFn;
     return pressed ? this.s.keyBgPressed : this.s.keyBg;
@@ -361,6 +369,7 @@ struct Index {
     .height(this.s.popupH)
     .borderRadius(this.s.popupRadius)
     .backgroundColor(this.s.popupBg)
+    .border({ width: 1, color: this.s.bubbleBorder })
     .position({ x: this.popupX, y: this.popupY })
     .enabled(false);
   }
@@ -428,10 +437,11 @@ struct Index {
       if (this.previewText.length > 0) {
         Text(this.previewText)
           .fontSize(15)
-          .fontColor('#FFFFFF')
+          .fontColor(this.s.previewText)
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .borderRadius(10)
-          .backgroundColor('#1F1F1F')
+          .backgroundColor(this.s.previewBubbleBg)
+          .border({ width: 1, color: this.s.bubbleBorder })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .offset({ x: 0, y: 0 });

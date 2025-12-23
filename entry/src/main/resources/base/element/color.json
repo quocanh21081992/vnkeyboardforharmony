@@ -3,6 +3,54 @@
     {
       "name": "start_window_background",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "kb_bg",
+      "value": "#E3E4E6"
+    },
+    {
+      "name": "kb_bubble_border",
+      "value": "#C7C7CC"
+    },
+    {
+      "name": "kb_key_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "kb_key_bg_pressed",
+      "value": "#D1D1D6"
+    },
+    {
+      "name": "kb_key_fn_bg",
+      "value": "#D7D8DC"
+    },
+    {
+      "name": "kb_key_fn_bg_pressed",
+      "value": "#C7C7CC"
+    },
+    {
+      "name": "kb_popup_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "kb_popup_text",
+      "value": "#000000"
+    },
+    {
+      "name": "kb_preview_bubble_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "kb_preview_text",
+      "value": "#000000"
+    },
+    {
+      "name": "kb_space_hint",
+      "value": "#000000"
+    },
+    {
+      "name": "kb_text_primary",
+      "value": "#000000"
     }
   ]
 }
