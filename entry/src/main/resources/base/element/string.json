@@ -37,6 +37,14 @@
       "value": "Tính năng, hướng dẫn và liên hệ"
     },
     {
+      "name": "menu_settings_title",
+      "value": "Cài đặt bàn phím"
+    },
+    {
+      "name": "menu_settings_desc",
+      "value": "Tuỳ chỉnh độ cao bàn phím"
+    },
+    {
       "name": "btn_keyboard_activated",
       "value": "Đã kích hoạt bàn phím"
     },
@@ -47,6 +55,54 @@
     {
       "name": "btn_open_settings",
       "value": "Vào cài đặt hệ thống"
+    },
+    {
+      "name": "settings_header",
+      "value": "Cài đặt"
+    },
+    {
+      "name": "settings_keyboard_height_title",
+      "value": "Độ cao bàn phím"
+    },
+    {
+      "name": "settings_keyboard_height_desc",
+      "value": "Nhập chiều cao bàn phím theo đơn vị vp (ví dụ: 270)."
+    },
+    {
+      "name": "settings_height_invalid",
+      "value": "Vui lòng nhập số hợp lệ."
+    },
+    {
+      "name": "settings_height_range",
+      "value": "Giá trị hợp lệ: %d - %d vp."
+    },
+    {
+      "name": "settings_reset",
+      "value": "Mặc định"
+    },
+    {
+      "name": "settings_save",
+      "value": "Lưu"
+    },
+    {
+      "name": "settings_saving",
+      "value": "Đang lưu..."
+    },
+    {
+      "name": "settings_saved",
+      "value": "Đã lưu cài đặt"
+    },
+    {
+      "name": "settings_save_failed",
+      "value": "Lưu thất bại"
+    },
+    {
+      "name": "settings_note_title",
+      "value": "Lưu ý"
+    },
+    {
+      "name": "settings_note_body",
+      "value": "Sau khi thay đổi, hãy đóng/mở lại bàn phím để áp dụng (đóng/mở lại ô nhập hoặc chuyển ứng dụng)."
     },
     {
       "name": "about_header",

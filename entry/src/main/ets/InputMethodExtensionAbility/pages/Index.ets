@@ -2,6 +2,11 @@
 import keyboardController from '../model/KeyboardControllerSingleton';
 import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_CAPS, KEYBOARD_ROWS_123, KEYBOARD_ROWS_123_MORE, KeyData, KeyKind } from './KeyboardKeyData';
 
+import { BusinessError, commonEventManager } from '@kit.BasicServicesKit';
+import { readKeyboardHeightVp, DEFAULT_KEYBOARD_HEIGHT_VP, clampKeyboardHeightVp } from '../model/SettingsStore';
+
+const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
+
 class KbStyle {
   // ✅ Dùng resource để hệ thống tự đổi theo Light/Dark mode (base/ & dark/).
   bg: ResourceColor = $r('app.color.kb_bg');
@@ -39,6 +44,7 @@ class KbStyle {
   // preview bubble
   previewBubbleBg: ResourceColor = $r('app.color.kb_preview_bubble_bg');
   previewText: ResourceColor = $r('app.color.kb_preview_text');
+  previewFont: number = 15;
 
   // border (Light mode có viền, Dark mode trong suốt)
   bubbleBorder: ResourceColor = $r('app.color.kb_bubble_border');
@@ -54,46 +60,45 @@ class KeyArea {
 @Entry
 @Component
 struct Index {
-  private s: KbStyle = new KbStyle();
+  // ✅ để scale thay đổi là UI rebuild chắc chắn: luôn gán NEW instance
+  @State private s: KbStyle = new KbStyle();
 
   @State private previewText: string = '';
-  // ✅ Shift behavior:
-  // - shiftOnce: tap Shift once => uppercase for next letter only
-  // - capsOn: double-tap Shift => CapsLock (persist)
   @State private capsOn: boolean = false;
   @State private shiftOnce: boolean = false;
-  // ✅ Auto-cap: viết hoa chữ cái đầu tiên của câu / sau dấu kết câu
   @State private autoCapNext: boolean = true;
-  // ✅ chỉ bật auto-cap sau khi ấn Space ngay sau . ! ?
   @State private lastWasSentencePunc: boolean = false;
 
-  // pressed
   @State private pressedKeyId: string = '';
 
-  // popup
   @State private popupVisible: boolean = false;
   @State private popupLabel: string = '';
   @State private popupX: number = 0;
   @State private popupY: number = 0;
 
-  // ✅ layout mode
   @State private isLayout123: boolean = false;
-  @State private isLayoutMore: boolean = false; // ✅ page 2 của layout 123
+  @State private isLayoutMore: boolean = false;
 
-  // double-tap Shift detection
   private lastShiftTapMs: number = 0;
   private SHIFT_DOUBLE_TAP_MS: number = 320;
 
   private sessionStartCb?: () => void;
 
-  // global root pos for popup coordinate conversion
+  // CommonEvent subscriber
+  private ceSubscriber?: commonEventManager.CommonEventSubscriber;
+
   private rootGX: number = 0;
   private rootGY: number = 0;
 
-  // cache key areas for popup positioning
   private keyAreas: Map<string, KeyArea> = new Map();
 
   aboutToAppear() {
+    // apply scale from saved height (IME process đọc prefs riêng)
+    this.loadHeightSetting();
+
+    // allow Settings page trigger rebuild
+    this.setupRebuildSubscriber();
+
     if (!this.sessionStartCb) {
       this.sessionStartCb = () => {
         this.resetUiState();
@@ -101,36 +106,122 @@ struct Index {
       keyboardController.addSessionStartListener(this.sessionStartCb);
     }
 
-    // ✅ lần đầu render cũng reset luôn
     this.resetUiState();
   }
 
   aboutToDisappear() {
+    this.teardownRebuildSubscriber();
+
     if (this.sessionStartCb) {
       keyboardController.removeSessionStartListener(this.sessionStartCb);
       this.sessionStartCb = undefined;
     }
   }
 
+  private setupRebuildSubscriber(): void {
+    if (this.ceSubscriber) return;
+
+    try {
+      const info: commonEventManager.CommonEventSubscribeInfo = { events: [EVENT_REBUILD_KEYBOARD] };
+
+      commonEventManager.createSubscriber(info).then((subscriber: commonEventManager.CommonEventSubscriber) => {
+        this.ceSubscriber = subscriber;
+
+        commonEventManager.subscribe(subscriber, (err: BusinessError, data: commonEventManager.CommonEventData) => {
+          if (err) return;
+
+          const n: number = Number(data.data);
+          const hVp: number = clampKeyboardHeightVp(Number.isFinite(n) ? n : DEFAULT_KEYBOARD_HEIGHT_VP);
+
+          // 1) resize panel (controller phải có hàm này)
+          try { keyboardController.applyKeyboardHeightVp(hVp); } catch { /* ignore */ }
+
+          // 2) rebuild UI scale
+          this.applyScaleFromContentHeightVp(hVp);
+
+          // 3) reset UI state cho dễ nhìn thấy thay đổi
+          this.resetUiState();
+        });
+      }).catch(() => {
+        // ignore
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private teardownRebuildSubscriber(): void {
+    const sub: commonEventManager.CommonEventSubscriber | undefined = this.ceSubscriber;
+    if (!sub) return;
+
+    try {
+      commonEventManager.unsubscribe(sub, (_err: BusinessError) => { /* ignore */ });
+    } catch {
+      // ignore
+    } finally {
+      this.ceSubscriber = undefined;
+    }
+  }
+
+  private loadHeightSetting(): void {
+    try {
+      const ctx: object = getContext(this) as object;
+      readKeyboardHeightVp(ctx).then((hVp: number) => {
+        const safe: number = clampKeyboardHeightVp(hVp);
+        this.applyScaleFromContentHeightVp(safe);
+      }).catch(() => {
+        this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
+      });
+    } catch {
+      this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
+    }
+  }
+
+  private applyScaleFromContentHeightVp(heightVp: number): void {
+    const base: number = DEFAULT_KEYBOARD_HEIGHT_VP;
+    const rawScale: number = base > 0 ? (heightVp / base) : 1;
+    const scale: number = Math.max(0.70, Math.min(1.40, rawScale));
+
+    const clampScaled = (v: number, minV: number, maxV: number): number => {
+      const n: number = Math.round(v * scale);
+      if (n < minV) return minV;
+      if (n > maxV) return maxV;
+      return n;
+    };
+
+    const next: KbStyle = new KbStyle();
+    next.keyH = clampScaled(44, 36, 64);
+    next.gapY = clampScaled(8, 6, 16);
+    next.gapX = clampScaled(5, 4, 12);
+    next.radius = clampScaled(6, 6, 14);
+    next.textSize = clampScaled(18, 16, 26);
+    next.previewFont = clampScaled(15, 13, 22);
+
+    next.popupW = clampScaled(30, 28, 48);
+    next.popupH = clampScaled(34, 30, 54);
+    next.popupGap = clampScaled(6, 4, 12);
+    next.popupRadius = clampScaled(10, 8, 18);
+    next.popupFont = clampScaled(18, 16, 28);
+
+    this.s = next;
+  }
+
   private resetUiState(): void {
-    // ✅ luôn mở bàn phím ở layout ABC
     this.isLayout123 = false;
     this.isLayoutMore = false;
 
-    // ✅ reset Shift/Caps
     this.capsOn = false;
     this.shiftOnce = false;
     this.autoCapNext = true;
     this.lastWasSentencePunc = false;
-    // ✅ đầu câu: bật shiftOnce để hiện layout chữ HOA
+
+    // đầu câu: bật shiftOnce để hiện layout chữ HOA
     this.shiftOnce = true;
     this.lastShiftTapMs = 0;
 
-    // ✅ reset UI transient states
     this.pressedKeyId = '';
     this.hidePopup();
 
-    // sync preview from controller (sau inputStart controller đã reset composing)
     this.previewText = keyboardController.getPreviewText();
   }
 
@@ -139,12 +230,10 @@ struct Index {
   }
 
   private isLetterChar(ch: string): boolean {
-    // ArkTS: không dùng \p{L}, dùng so sánh upper/lower để nhận diện ký tự chữ (kể cả 'đ')
     return ch.length === 1 && (ch.toLowerCase() !== ch.toUpperCase());
   }
 
   private isFn(k: KeyData): boolean {
-    // Spacer không phải phím chức năng
     return k.kind !== KeyKind.Char && k.kind !== KeyKind.Space && k.kind !== KeyKind.Spacer;
   }
 
@@ -155,7 +244,6 @@ struct Index {
   }
 
   private canShowPopup(k: KeyData): boolean {
-    // chỉ popup cho chữ / số / ký tự đặc biệt
     return k.kind === KeyKind.Char;
   }
 
@@ -163,10 +251,8 @@ struct Index {
     if (k.kind === KeyKind.Spacer) return '';
     if (k.kind === KeyKind.Char) return k.label;
     if (k.kind === KeyKind.Shift) {
-      // ✅ layout 123: Shift là phím "=\<" => chỉ hiển thị label, KHÔNG can thiệp caps/shift
       if (this.isLayout123) return k.label;
 
-      // user chủ động bấm Shift => tắt auto-cap cho chữ cái kế tiếp (giống bàn phím phổ biến)
       this.autoCapNext = false;
       if (this.capsOn) return '⇪';
       if (this.shiftOnce) return '⇧•';
@@ -183,7 +269,6 @@ struct Index {
   private onKey(k: KeyData): void {
     if (k.kind === KeyKind.Spacer) return;
 
-    // ✅ chuyển layout
     if (k.kind === KeyKind.Num123) {
       this.isLayout123 = true;
       this.isLayoutMore = false;
@@ -194,11 +279,11 @@ struct Index {
       this.pressedKeyId = '';
       return;
     }
+
     if (k.kind === KeyKind.Abc) {
       this.isLayout123 = false;
       this.isLayoutMore = false;
       this.capsOn = false;
-      // nếu đang ở đầu câu (autoCapNext), bật shiftOnce để hiện layout chữ HOA
       this.shiftOnce = this.autoCapNext;
       this.lastShiftTapMs = 0;
       this.hidePopup();
@@ -207,7 +292,6 @@ struct Index {
     }
 
     if (k.kind === KeyKind.Shift) {
-      // ✅ ở layout 123: phím "=\<" -> chuyển sang layout mới
       if (this.isLayout123) {
         this.isLayoutMore = true;
         this.hidePopup();
@@ -215,30 +299,23 @@ struct Index {
         return;
       }
 
-      // ✅ Shift 1 lần => viết hoa 1 chữ (shiftOnce)
-      // ✅ Double-tap Shift => CapsLock (capsOn)
-      if (!this.isLayout123) {
-        const now: number = Date.now();
-        const delta: number = now - this.lastShiftTapMs;
+      const now: number = Date.now();
+      const delta: number = now - this.lastShiftTapMs;
 
-        if (delta <= this.SHIFT_DOUBLE_TAP_MS) {
-          // double-tap => toggle CapsLock
-          this.capsOn = !this.capsOn;
+      if (delta <= this.SHIFT_DOUBLE_TAP_MS) {
+        this.capsOn = !this.capsOn;
+        this.shiftOnce = false;
+        this.lastShiftTapMs = 0;
+      } else {
+        if (this.capsOn) {
+          this.capsOn = false;
           this.shiftOnce = false;
-          this.lastShiftTapMs = 0;
         } else {
-          // single tap
-          if (this.capsOn) {
-            // nếu đang CapsLock, tap 1 cái để tắt
-            this.capsOn = false;
-            this.shiftOnce = false;
-          } else {
-            // bật/tắt shiftOnce
-            this.shiftOnce = !this.shiftOnce;
-          }
-          this.lastShiftTapMs = now;
+          this.shiftOnce = !this.shiftOnce;
         }
+        this.lastShiftTapMs = now;
       }
+
       this.hidePopup();
       this.pressedKeyId = '';
       return;
@@ -246,7 +323,7 @@ struct Index {
 
     if (k.kind === KeyKind.Space) {
       keyboardController.space();
-      // ✅ Nếu vừa gõ . ! ? và bấm Space => tự bật viết hoa cho ký tự kế tiếp
+
       if (this.lastWasSentencePunc) {
         this.autoCapNext = true;
         if (!this.isLayout123 && !this.capsOn) {
@@ -254,6 +331,7 @@ struct Index {
         }
       }
       this.lastWasSentencePunc = false;
+
       this.previewText = '';
       setTimeout(() => this.syncPreview(), 0);
       return;
@@ -261,7 +339,6 @@ struct Index {
 
     if (k.kind === KeyKind.Enter) {
       keyboardController.enter();
-      // ✅ sau xuống dòng: bắt đầu câu mới
       this.autoCapNext = true;
       if (!this.isLayout123 && !this.capsOn) {
         this.shiftOnce = true;
@@ -273,7 +350,6 @@ struct Index {
 
     let out: string = k.value;
 
-    // ✅ Auto-cap / ShiftOnce / CapsLock: áp dụng trực tiếp lên ký tự gửi xuống TelexEngine
     if (!this.isLayout123) {
       const needUpper: boolean = (this.capsOn || this.shiftOnce || this.autoCapNext);
       if (needUpper && this.isLetterChar(out)) {
@@ -283,7 +359,6 @@ struct Index {
 
     keyboardController.commitText(out);
 
-    // ✅ Dấu kết câu: CHỈ bật auto-cap sau khi người dùng bấm Space ngay sau đó
     if (out === '.' || out === '!' || out === '?') {
       this.lastWasSentencePunc = true;
       this.autoCapNext = false;
@@ -292,7 +367,6 @@ struct Index {
       this.autoCapNext = false;
     }
 
-    // ✅ shiftOnce chỉ dùng cho 1 chữ cái kế tiếp
     if (this.shiftOnce && !this.capsOn) {
       this.shiftOnce = false;
     }
@@ -339,11 +413,9 @@ struct Index {
       this.pressedKeyId = k.id;
       this.showPopupForKey(k);
 
-      // commit ngay ở DOWN
       if (k.kind !== KeyKind.Backspace) {
         this.onKey(k);
       } else {
-        // ✅ Backspace có thể xoá dấu kết câu, tránh auto-cap sai
         this.lastWasSentencePunc = false;
         keyboardController.startBackspaceRepeat();
       }
@@ -426,7 +498,6 @@ struct Index {
     return (this.capsOn || this.shiftOnce) ? KEYBOARD_ROWS_CAPS : KEYBOARD_ROWS_MAIN;
   }
 
-  // ✅ ArkUI ForEach diffing: MAIN và CAPS dùng cùng id (q,w,e,...)
   private keyModePrefix(): string {
     return (this.capsOn || this.shiftOnce) ? 'caps' : 'main';
   }
@@ -436,7 +507,7 @@ struct Index {
     Row() {
       if (this.previewText.length > 0) {
         Text(this.previewText)
-          .fontSize(15)
+          .fontSize(this.s.previewFont)
           .fontColor(this.s.previewText)
           .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .borderRadius(10)
@@ -450,8 +521,8 @@ struct Index {
       }
     }
     .width('100%')
-    .height(this.s.keyH) // ✅ đúng 1 row phím
-    .padding({ left: this.s.padding, right: this.s.padding }) // ✅ không top/bottom
+    .height(this.s.keyH)
+    .padding({ left: this.s.padding, right: this.s.padding })
     .alignItems(VerticalAlign.Center)
     .justifyContent(FlexAlign.Center);
   }

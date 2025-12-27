@@ -124,6 +124,7 @@ struct Index {
         .margin({ top: 6, bottom: 14 })
 
       Column({ space: 12 }) {
+        this.MenuItem($r('app.string.menu_settings_title'), $r('app.string.menu_settings_desc'), 'pages/Settings')
         this.MenuItem($r('app.string.menu_privacy_title'), $r('app.string.menu_privacy_desc'), 'pages/Privacy')
         this.MenuItem($r('app.string.menu_about_title'), $r('app.string.menu_about_desc'), 'pages/About')
       }

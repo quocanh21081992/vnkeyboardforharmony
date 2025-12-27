@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "InputMethodExtensionAbility/pages/Index",
+    "pages/Settings",
     "pages/Privacy",
     "pages/About"
   ]

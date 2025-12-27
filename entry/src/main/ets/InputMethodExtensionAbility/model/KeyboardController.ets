@@ -3,13 +3,13 @@ import type InputMethodExtensionContext from '@ohos.InputMethodExtensionContext'
 import display from '@ohos.display';
 
 import { TelexEngine, TelexActionKind } from './TelexEngine';
+import { readKeyboardHeightVp, writeKeyboardHeightVp, DEFAULT_KEYBOARD_HEIGHT_VP, MIN_KEYBOARD_HEIGHT_VP, MAX_KEYBOARD_HEIGHT_VP } from './SettingsStore';
 
 const UI_PAGE: string = 'InputMethodExtensionAbility/pages/Index';
 
 // ---- Height tuning (vp) ----
-const KEYBOARD_CONTENT_HEIGHT_VP: number = 270;
+// Content height can be customized from the app settings; safe bottom keeps a small gap above gesture area.
 const KEYBOARD_SAFE_BOTTOM_VP: number = 12;
-const KEYBOARD_TOTAL_HEIGHT_VP: number = KEYBOARD_CONTENT_HEIGHT_VP + KEYBOARD_SAFE_BOTTOM_VP;
 
 class PanelSize {
   widthPx: number = 0;
@@ -21,13 +21,13 @@ class PanelInfoImpl implements inputMethodEngine.PanelInfo {
   flag: inputMethodEngine.PanelFlag = inputMethodEngine.PanelFlag.FLG_FIXED;
 }
 
-function getPanelSizePx(): PanelSize {
+function getPanelSizePx(totalHeightVp: number): PanelSize {
   const s: PanelSize = new PanelSize();
   try {
     const d: display.Display = display.getDefaultDisplaySync();
     const vpr: number = d.densityPixels > 0 ? d.densityPixels : 1;
     s.widthPx = d.width;
-    s.heightPx = Math.max(1, Math.round(KEYBOARD_TOTAL_HEIGHT_VP * vpr));
+    s.heightPx = Math.max(1, Math.round(totalHeightVp * vpr));
     return s;
   } catch {
     s.widthPx = 1080;
@@ -36,10 +36,22 @@ function getPanelSizePx(): PanelSize {
   }
 }
 
+async function getKeyboardContentHeightVp(context: InputMethodExtensionContext): Promise<number> {
+  try {
+    // Read from shared preferences written by the app settings page.
+    return await readKeyboardHeightVp(context as never);
+  } catch {
+    return DEFAULT_KEYBOARD_HEIGHT_VP;
+  }
+}
+
 export class KeyboardController {
   private panel?: inputMethodEngine.Panel;
   private textInputClient?: inputMethodEngine.InputClient;
   private pendingShow: boolean = false;
+
+  // Save context for later refresh (e.g., when settings change).
+  private ctxObj?: object;
 
 
   // ===== UI listeners (Index.ets) =====
@@ -111,6 +123,7 @@ export class KeyboardController {
   }
 
   onCreate(context: InputMethodExtensionContext): void {
+    this.ctxObj = context as object;
     const ime: inputMethodEngine.InputMethodAbility = inputMethodEngine.getInputMethodAbility();
     if (!ime) return;
 
@@ -120,6 +133,11 @@ export class KeyboardController {
       (_kbCtrl: inputMethodEngine.KeyboardController, client: inputMethodEngine.InputClient) => {
         this.textInputClient = client;
         this.resetComposing();
+
+        // Apply latest height setting each time the session starts.
+        // (Settings may be changed from the main app process.)
+        this.refreshPanelHeightFromSettings();
+
         this.notifySessionStart();
 
         if (this.panel) {
@@ -165,7 +183,9 @@ export class KeyboardController {
     try {
       const panel: inputMethodEngine.Panel = await ime.createPanel(context, panelInfo);
 
-      const size: PanelSize = getPanelSizePx();
+      const contentVp: number = await getKeyboardContentHeightVp(context);
+      const totalVp: number = contentVp + KEYBOARD_SAFE_BOTTOM_VP;
+      const size: PanelSize = getPanelSizePx(totalVp);
       await panel.resize(size.widthPx, size.heightPx);
 
       panel.setUiContent(UI_PAGE, null);
@@ -175,6 +195,53 @@ export class KeyboardController {
         this.pendingShow = false;
         panel.show();
       }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Re-read setting and resize the IME panel.
+  // This is called on every input session start and can also be triggered by UI observers.
+
+  // Apply a new keyboard content height (vp), persist in IME process, and resize panel immediately.
+  async applyKeyboardHeightVp(heightVp: number): Promise<void> {
+    const panel: inputMethodEngine.Panel | undefined = this.panel;
+    const ctx: object | undefined = this.ctxObj;
+    if (!panel || !ctx) return;
+
+    // Clamp to safe range
+    const clamped: number = Math.max(MIN_KEYBOARD_HEIGHT_VP, Math.min(MAX_KEYBOARD_HEIGHT_VP, heightVp));
+    try {
+      await writeKeyboardHeightVp(ctx as never, clamped);
+    } catch {
+      // ignore
+    }
+
+    const totalVp: number = clamped + KEYBOARD_SAFE_BOTTOM_VP;
+    const size: PanelSize = getPanelSizePx(totalVp);
+    try {
+      await panel.resize(size.widthPx, size.heightPx);
+    } catch {
+      // ignore
+    }
+  }
+
+  async refreshPanelHeightFromSettings(): Promise<void> {
+    const panel: inputMethodEngine.Panel | undefined = this.panel;
+    const ctx: object | undefined = this.ctxObj;
+    if (!panel || !ctx) return;
+
+    let contentVp: number = DEFAULT_KEYBOARD_HEIGHT_VP;
+    try {
+      contentVp = await readKeyboardHeightVp(ctx as never);
+    } catch {
+      contentVp = DEFAULT_KEYBOARD_HEIGHT_VP;
+    }
+
+    const totalVp: number = contentVp + KEYBOARD_SAFE_BOTTOM_VP;
+    const size: PanelSize = getPanelSizePx(totalVp);
+    try {
+      await panel.resize(size.widthPx, size.heightPx);
     } catch {
       // ignore
     }
