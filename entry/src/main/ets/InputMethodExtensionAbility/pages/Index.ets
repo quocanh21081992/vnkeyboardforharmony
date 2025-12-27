@@ -1,6 +1,13 @@
 // entry/src/main/ets/InputMethodExtensionAbility/pages/Index.ets
 import keyboardController from '../model/KeyboardControllerSingleton';
-import { KEYBOARD_ROWS_MAIN, KEYBOARD_ROWS_CAPS, KEYBOARD_ROWS_123, KEYBOARD_ROWS_123_MORE, KeyData, KeyKind } from './KeyboardKeyData';
+import {
+  KEYBOARD_ROWS_MAIN,
+  KEYBOARD_ROWS_CAPS,
+  KEYBOARD_ROWS_123,
+  KEYBOARD_ROWS_123_MORE,
+  KeyData,
+  KeyKind
+} from './KeyboardKeyData';
 
 import { BusinessError, commonEventManager } from '@kit.BasicServicesKit';
 import { readKeyboardHeightVp, DEFAULT_KEYBOARD_HEIGHT_VP, clampKeyboardHeightVp } from '../model/SettingsStore';
@@ -8,7 +15,6 @@ import { readKeyboardHeightVp, DEFAULT_KEYBOARD_HEIGHT_VP, clampKeyboardHeightVp
 const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
 
 class KbStyle {
-  // ✅ Dùng resource để hệ thống tự đổi theo Light/Dark mode (base/ & dark/).
   bg: ResourceColor = $r('app.color.kb_bg');
 
   padding: number = 2;
@@ -46,7 +52,6 @@ class KbStyle {
   previewText: ResourceColor = $r('app.color.kb_preview_text');
   previewFont: number = 15;
 
-  // border (Light mode có viền, Dark mode trong suốt)
   bubbleBorder: ResourceColor = $r('app.color.kb_bubble_border');
 }
 
@@ -60,7 +65,6 @@ class KeyArea {
 @Entry
 @Component
 struct Index {
-  // ✅ để scale thay đổi là UI rebuild chắc chắn: luôn gán NEW instance
   @State private s: KbStyle = new KbStyle();
 
   @State private previewText: string = '';
@@ -79,12 +83,15 @@ struct Index {
   @State private isLayout123: boolean = false;
   @State private isLayoutMore: boolean = false;
 
+  // ✅ Foldable / cover screen correction
+  @State private panelScale: number = 1.0;
+  private wantedTotalVp: number = 0;
+
   private lastShiftTapMs: number = 0;
   private SHIFT_DOUBLE_TAP_MS: number = 320;
 
   private sessionStartCb?: () => void;
 
-  // CommonEvent subscriber
   private ceSubscriber?: commonEventManager.CommonEventSubscriber;
 
   private rootGX: number = 0;
@@ -93,10 +100,7 @@ struct Index {
   private keyAreas: Map<string, KeyArea> = new Map();
 
   aboutToAppear() {
-    // apply scale from saved height (IME process đọc prefs riêng)
     this.loadHeightSetting();
-
-    // allow Settings page trigger rebuild
     this.setupRebuildSubscriber();
 
     if (!this.sessionStartCb) {
@@ -133,13 +137,16 @@ struct Index {
           const n: number = Number(data.data);
           const hVp: number = clampKeyboardHeightVp(Number.isFinite(n) ? n : DEFAULT_KEYBOARD_HEIGHT_VP);
 
-          // 1) resize panel (controller phải có hàm này)
+          // remember wanted total for foldable correction
+          this.wantedTotalVp = hVp + this.s.safeBottom;
+
+          // resize panel
           try { keyboardController.applyKeyboardHeightVp(hVp); } catch { /* ignore */ }
 
-          // 2) rebuild UI scale
+          // rebuild UI scale
           this.applyScaleFromContentHeightVp(hVp);
 
-          // 3) reset UI state cho dễ nhìn thấy thay đổi
+          // reset UI state
           this.resetUiState();
         });
       }).catch(() => {
@@ -165,14 +172,17 @@ struct Index {
 
   private loadHeightSetting(): void {
     try {
-      const ctx: object = getContext(this) as object;
+      const ctx: object = this.getUIContext().getHostContext() as object;
       readKeyboardHeightVp(ctx).then((hVp: number) => {
         const safe: number = clampKeyboardHeightVp(hVp);
+        this.wantedTotalVp = safe + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(safe);
       }).catch(() => {
+        this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
       });
     } catch {
+      this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
       this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
     }
   }
@@ -180,7 +190,10 @@ struct Index {
   private applyScaleFromContentHeightVp(heightVp: number): void {
     const base: number = DEFAULT_KEYBOARD_HEIGHT_VP;
     const rawScale: number = base > 0 ? (heightVp / base) : 1;
-    const scale: number = Math.max(0.70, Math.min(1.40, rawScale));
+    const scale0: number = Math.max(0.70, Math.min(1.40, rawScale));
+
+    // ✅ apply correction from actual panel height (foldable/cover)
+    const scale: number = Math.max(0.70, Math.min(1.40, scale0 * this.panelScale));
 
     const clampScaled = (v: number, minV: number, maxV: number): number => {
       const n: number = Math.round(v * scale);
@@ -203,6 +216,9 @@ struct Index {
     next.popupRadius = clampScaled(10, 8, 18);
     next.popupFont = clampScaled(18, 16, 28);
 
+    next.safeBottom = this.s.safeBottom;
+    next.padding = this.s.padding;
+
     this.s = next;
   }
 
@@ -215,7 +231,6 @@ struct Index {
     this.autoCapNext = true;
     this.lastWasSentencePunc = false;
 
-    // đầu câu: bật shiftOnce để hiện layout chữ HOA
     this.shiftOnce = true;
     this.lastShiftTapMs = 0;
 
@@ -250,19 +265,21 @@ struct Index {
   private labelOf(k: KeyData): string {
     if (k.kind === KeyKind.Spacer) return '';
     if (k.kind === KeyKind.Char) return k.label;
+
     if (k.kind === KeyKind.Shift) {
       if (this.isLayout123) return k.label;
-
       this.autoCapNext = false;
       if (this.capsOn) return '⇪';
       if (this.shiftOnce) return '⇧•';
       return '⇧';
     }
+
     if (k.kind === KeyKind.Backspace) return '⌫';
     if (k.kind === KeyKind.Enter) return '⏎';
     if (k.kind === KeyKind.Num123) return '123';
     if (k.kind === KeyKind.Abc) return 'ABC';
     if (k.kind === KeyKind.Space) return '';
+
     return k.label;
   }
 
@@ -531,27 +548,33 @@ struct Index {
   private KeyboardBody() {
     Column() {
       if (this.isLayout123) {
-        ForEach(this.isLayoutMore ? KEYBOARD_ROWS_123_MORE : KEYBOARD_ROWS_123, (row: Array<KeyData>, ri: number) => {
-          Row() {
-            ForEach(row, (k: KeyData) => {
-              this.KeyView(k);
-            }, (k: KeyData) => k.id);
-          }
-          .width('100%')
-          .height(this.s.keyH)
-          .margin({ top: ri === 0 ? 0 : this.s.gapY });
-        }, (_row: Array<KeyData>, i: number) => (this.isLayoutMore ? 'm' : 's') + String(i));
+        ForEach(this.isLayoutMore ? KEYBOARD_ROWS_123_MORE : KEYBOARD_ROWS_123,
+          (row: Array<KeyData>, ri: number) => {
+            Row() {
+              ForEach(row, (k: KeyData) => {
+                this.KeyView(k);
+              }, (k: KeyData) => k.id);
+            }
+            .width('100%')
+            .height(this.s.keyH)
+            .margin({ top: ri === 0 ? 0 : this.s.gapY });
+          },
+          (_row: Array<KeyData>, i: number) => (this.isLayoutMore ? 'm' : 's') + String(i)
+        );
       } else {
-        ForEach(this.getAbcRows(), (row: Array<KeyData>, ri: number) => {
-          Row() {
-            ForEach(row, (k: KeyData) => {
-              this.KeyView(k);
-            }, (k: KeyData) => this.keyModePrefix() + '_' + k.id);
-          }
-          .width('100%')
-          .height(this.s.keyH)
-          .margin({ top: ri === 0 ? 0 : this.s.gapY });
-        }, (_row: Array<KeyData>, i: number) => this.keyModePrefix() + '_m' + String(i));
+        ForEach(this.getAbcRows(),
+          (row: Array<KeyData>, ri: number) => {
+            Row() {
+              ForEach(row, (k: KeyData) => {
+                this.KeyView(k);
+              }, (k: KeyData) => this.keyModePrefix() + '_' + k.id);
+            }
+            .width('100%')
+            .height(this.s.keyH)
+            .margin({ top: ri === 0 ? 0 : this.s.gapY });
+          },
+          (_row: Array<KeyData>, i: number) => this.keyModePrefix() + '_m' + String(i)
+        );
       }
     }
     .width('100%')
@@ -576,6 +599,25 @@ struct Index {
     .onAreaChange((_: Area, area: Area) => {
       this.rootGX = this.lenToNumber(area.globalPosition?.x);
       this.rootGY = this.lenToNumber(area.globalPosition?.y);
+
+      // ✅ actual panel height correction
+      const actualH: number = this.lenToNumber(area.height);
+      if (this.wantedTotalVp > 0 && actualH > 0) {
+        const corr: number = actualH / this.wantedTotalVp;
+        const next: number = Math.max(0.70, Math.min(1.40, corr));
+
+        if (Math.abs(next - this.panelScale) > 0.03) {
+          this.panelScale = next;
+
+          const targetContent: number = (this.wantedTotalVp - this.s.safeBottom) > 0
+            ? (this.wantedTotalVp - this.s.safeBottom)
+            : DEFAULT_KEYBOARD_HEIGHT_VP;
+
+          this.applyScaleFromContentHeightVp(targetContent);
+        }
+      } else {
+        this.panelScale = 1.0;
+      }
     })
     .width('100%')
     .height('100%');

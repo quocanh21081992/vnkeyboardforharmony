@@ -1,154 +1,247 @@
-// entry/src/main/ets/pages/Index.ets
-import router from '@ohos.router'
-import inputMethod from '@ohos.inputMethod'
-import { common, Want } from '@kit.AbilityKit'
+// entry/src/main/ets/pages/Settings.ets
+import type { common } from '@kit.AbilityKit'
 import type { BusinessError } from '@kit.BasicServicesKit'
+import { commonEventManager } from '@kit.BasicServicesKit'
 
-class InputMethodInfo {
-  packageName: string = ''
-}
+import {
+  readKeyboardHeightVp,
+  writeKeyboardHeightVp,
+  bumpKeyboardReloadSeq,
+  DEFAULT_KEYBOARD_HEIGHT_VP,
+  MIN_KEYBOARD_HEIGHT_VP,
+  MAX_KEYBOARD_HEIGHT_VP
+} from './SettingsStore'
 
-interface InputMethodSettingApi {
-  getInputMethods(enable: boolean): Promise<Array<InputMethodInfo>>
-}
+const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
 
 @Entry
 @Component
-struct Index {
-  @State imeActivated: boolean = false
-  @State checkingIme: boolean = false
+struct Settings {
+  @State private heightText: string = ''
+  @State private loading: boolean = true
+  @State private saving: boolean = false
+  @State private errorText: string = ''
+
+  private back(): void {
+    try {
+      this.getUIContext().getRouter().back()
+    } catch (e) {
+      console.error('router back failed: ' + JSON.stringify(e))
+    }
+  }
 
   aboutToAppear(): void {
-    this.refreshImeStatus()
+    this.load()
   }
 
-  onPageShow(): void {
-    this.refreshImeStatus()
+  private load(): void {
+    this.loading = true
+    this.errorText = ''
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
+      readKeyboardHeightVp(ctx).then((h: number) => {
+        this.heightText = String(h)
+        this.loading = false
+      }).catch((_e: BusinessError) => {
+        this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
+        this.loading = false
+      })
+    } catch (e) {
+      this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
+      this.loading = false
+    }
   }
 
-  private async refreshImeStatus(): Promise<void> {
-    if (this.checkingIme) {
+  private showToast(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message })
+    } catch {
+      // ignore
+    }
+  }
+
+  private parseHeight(): number | undefined {
+    const raw: string = this.heightText.trim()
+    if (raw.length === 0) return undefined
+    const n: number = Number(raw)
+    if (!Number.isFinite(n)) return undefined
+    return Math.round(n)
+  }
+
+  private publishRebuild(heightVp: number): void {
+    try {
+      commonEventManager.publish(EVENT_REBUILD_KEYBOARD, { data: String(heightVp) }, (_err?: BusinessError) => {
+        // ignore
+      })
+    } catch {
+      // ignore
+    }
+  }
+
+  private save(): void {
+    if (this.saving || this.loading) return
+
+    const n: number | undefined = this.parseHeight()
+    if (n === undefined) {
+      this.errorText = 'Vui lòng nhập số hợp lệ.'
       return
     }
-    this.checkingIme = true
+
+    if (n < MIN_KEYBOARD_HEIGHT_VP || n > MAX_KEYBOARD_HEIGHT_VP) {
+      this.errorText = `Độ cao phải trong khoảng ${MIN_KEYBOARD_HEIGHT_VP}–${MAX_KEYBOARD_HEIGHT_VP} vp.`
+      return
+    }
+
+    this.errorText = ''
+    this.saving = true
+
     try {
-      const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
-      const myBundle: string = ctx.abilityInfo.bundleName
-
-      const setting: InputMethodSettingApi = inputMethod.getSetting() as InputMethodSettingApi
-      const list: Array<InputMethodInfo> = await setting.getInputMethods(true)
-
-      let activated: boolean = false
-      for (let i = 0; i < list.length; i++) {
-        if (list[i].packageName === myBundle) {
-          activated = true
-          break
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
+      writeKeyboardHeightVp(ctx, n).then(() => {
+        // ✅ bump seq (debug/log) — vẫn giữ nhưng không có nút riêng nữa
+        try {
+          bumpKeyboardReloadSeq(ctx).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+        } catch {
+          // ignore
         }
-      }
-      this.imeActivated = activated
-    } catch (e) {
-      this.imeActivated = false
-    } finally {
-      this.checkingIme = false
-    }
-  }
 
-  private openSystemSettings(): void {
-    const ctx: common.UIAbilityContext = getContext(this) as common.UIAbilityContext
+        // ✅ gộp rebuild vào Save
+        this.publishRebuild(n)
 
-    const wantMain: Want = {
-      bundleName: 'com.huawei.hmos.settings',
-      abilityName: 'com.huawei.hmos.settings.MainAbility'
-    }
-
-    try {
-      ctx.startAbility(wantMain).catch((err: BusinessError) => {
-        console.error(`Open settings failed: ${err.code} ${err.message}`)
+        this.saving = false
+        this.showToast('Đã lưu cài đặt.')
+      }).catch((_e: BusinessError) => {
+        this.saving = false
+        this.showToast('Lưu thất bại. Vui lòng thử lại.')
       })
     } catch (e) {
-      console.error('Open settings exception: ' + JSON.stringify(e))
+      this.saving = false
+      this.showToast('Lưu thất bại. Vui lòng thử lại.')
     }
   }
 
-  private go(url: string): void {
-    try {
-      // pushUrl returns a Promise in many SDK versions; handle rejection explicitly to satisfy ArkTSCheck
-      router.pushUrl({ url }).catch((err: BusinessError) => {
-        console.error(`pushUrl failed: ${err.code} ${err.message}`)
-      })
-    } catch (e) {
-      console.error('pushUrl exception: ' + JSON.stringify(e))
-    }
-  }
-
-  @Builder
-  private MenuItem(title: ResourceStr, desc: ResourceStr, url: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(18)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .textAlign(TextAlign.Start)
-
-        Text(desc)
-          .fontSize(14)
-          .fontColor($r('app.color.text_secondary'))
-          .margin({ top: 6 })
-          .width('100%')
-          .textAlign(TextAlign.Start)
-      }
-      .layoutWeight(1)
-
-      Text('›')
-        .fontSize(20)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ left: 10 })
-    }
-    .width('100%')
-    .padding(14)
-    .borderRadius(12)
-    .backgroundColor($r('app.color.card_bg'))
-    .onClick(() => this.go(url))
+  private resetToDefault(): void {
+    this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
+    this.errorText = ''
   }
 
   build() {
     Column() {
-      Text($r('app.string.app_title'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .margin({ top: 6, bottom: 14 })
+      // Header
+      Row() {
+        Text('←')
+          .fontSize(20)
+          .fontColor($r('app.color.text_primary'))
+          .padding({ left: 16, right: 10, top: 12, bottom: 12 })
+          .onClick(() => this.back())
 
-      Column({ space: 12 }) {
-        this.MenuItem($r('app.string.menu_settings_title'), $r('app.string.menu_settings_desc'), 'pages/Settings')
-        this.MenuItem($r('app.string.menu_privacy_title'), $r('app.string.menu_privacy_desc'), 'pages/Privacy')
-        this.MenuItem($r('app.string.menu_about_title'), $r('app.string.menu_about_desc'), 'pages/About')
+        Text($r('app.string.settings_header'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .textAlign(TextAlign.Start)
+          .layoutWeight(1)
+
+        Blank().width(46)
       }
       .width('100%')
 
-      Blank().layoutWeight(1)
+      Scroll() {
+        Column({ space: 12 }) {
+          // Card
+          Column() {
+            Text($r('app.string.settings_keyboard_height_title'))
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .textAlign(TextAlign.Start)
 
-      if (this.imeActivated) {
-        Button($r('app.string.btn_keyboard_activated'))
+            Text($r('app.string.settings_keyboard_height_desc'))
+              .margin({ top: 8 })
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+              .lineHeight(18)
+              .width('100%')
+              .textAlign(TextAlign.Start)
+
+            Row() {
+              TextInput({ text: this.heightText, placeholder: String(DEFAULT_KEYBOARD_HEIGHT_VP) })
+                .type(InputType.Number)
+                .onChange((v: string) => {
+                  this.heightText = v
+                  this.errorText = ''
+                })
+                .layoutWeight(1)
+                .height(44)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(10)
+                .backgroundColor($r('app.color.page_bg'))
+
+              Text('vp')
+                .fontSize(14)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ left: 10 })
+            }
+            .width('100%')
+            .margin({ top: 12 })
+
+            if (this.errorText.length > 0) {
+              Text(this.errorText)
+                .margin({ top: 10 })
+                .fontSize(12)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .textAlign(TextAlign.Start)
+            }
+
+            Row({ space: 10 }) {
+              Button($r('app.string.settings_reset'))
+                .layoutWeight(1)
+                .onClick(() => this.resetToDefault())
+
+              Button(this.saving ? $r('app.string.settings_saving') : $r('app.string.settings_save'))
+                .layoutWeight(1)
+                .enabled(!this.loading && !this.saving)
+                .onClick(() => this.save())
+            }
+            .width('100%')
+            .margin({ top: 14 })
+          }
           .width('100%')
-          .enabled(false)
-          .margin({ bottom: 10 })
-      } else {
-        Button(this.checkingIme ? $r('app.string.btn_checking') : $r('app.string.btn_open_settings'))
+          .padding(16)
+          .backgroundColor($r('app.color.card_bg'))
+          .borderRadius(14)
+
+          Column() {
+            Text($r('app.string.settings_note_title'))
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .textAlign(TextAlign.Start)
+
+            Text($r('app.string.settings_note_body'))
+              .margin({ top: 8 })
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+              .lineHeight(18)
+              .width('100%')
+              .textAlign(TextAlign.Start)
+          }
           .width('100%')
-          .enabled(!this.checkingIme)
-          .margin({ bottom: 10 })
-          .onClick(() => this.openSystemSettings())
+          .padding(16)
+          .backgroundColor($r('app.color.card_bg'))
+          .borderRadius(14)
+
+          Blank().height(18)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14 })
       }
     }
     .width('100%')
     .height('100%')
-    .padding(16)
     .backgroundColor($r('app.color.page_bg'))
-    .alignItems(HorizontalAlign.Start)
   }
 }

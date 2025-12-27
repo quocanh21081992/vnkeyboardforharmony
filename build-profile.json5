@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\HUAWEI\\.ohos\\config\\default_VnTelexKeyboard_mEJb6ScDnzFu9yXFu-BA42dVxihuV_1MiB1q-1oh7Nc=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B662BB6917621A612AE7F47538234D26D48531C8D5C8DB73FD8FF545D9E9EF41EBF92C44F84BFBB",
+          "keyPassword": "0000001B25B757FD0F7D13C2EAF92F01F0292DA4617AE697FCAD1189CB054267F5300C3D1D518ABBE242BD",
           "profile": "C:\\Users\\HUAWEI\\.ohos\\config\\default_VnTelexKeyboard_mEJb6ScDnzFu9yXFu-BA42dVxihuV_1MiB1q-1oh7Nc=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\HUAWEI\\.ohos\\config\\default_VnTelexKeyboard_mEJb6ScDnzFu9yXFu-BA42dVxihuV_1MiB1q-1oh7Nc=.p12",
-          "storePassword": "0000001BC62AD1BBB3E7D8E82A35F2905F5988409B6F52A834A3D2FCC27B63CBCF79D4CB9BA8204456B69A"
+          "storePassword": "0000001BF8FE5846B17C0AD6636465773D3AB0EC1707870C75875CC37F22D781A04712B16FB5F628236279"
         }
       }
     ],
