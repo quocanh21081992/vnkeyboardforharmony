@@ -360,7 +360,7 @@ export class VniEngine {
 
     out.kind = TelexActionKind.Insert;
     out.text = keyChar;
-    out.newWord = raw;
+    out.newWord = currentWord + keyChar;
     return out;
   }
 
