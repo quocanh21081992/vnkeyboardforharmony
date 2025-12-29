@@ -9,10 +9,13 @@ import {
   bumpKeyboardReloadSeq,
   readInputMethod,
   writeInputMethod,
+  readNumberRowEnabled,
+  writeNumberRowEnabled,
   type InputMethodType,
   DEFAULT_KEYBOARD_HEIGHT_VP,
   MIN_KEYBOARD_HEIGHT_VP,
-  MAX_KEYBOARD_HEIGHT_VP
+  MAX_KEYBOARD_HEIGHT_VP,
+  DEFAULT_NUMBER_ROW_ENABLED
 } from './SettingsStore'
 
 const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
@@ -22,6 +25,7 @@ const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
 struct Settings {
   @State private heightText: string = ''
   @State private inputMethod: InputMethodType = 'telex'
+  @State private numberRowEnabled: boolean = DEFAULT_NUMBER_ROW_ENABLED
   @State private loading: boolean = true
   @State private saving: boolean = false
   @State private errorText: string = ''
@@ -50,21 +54,26 @@ struct Settings {
       const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
       Promise.all([
         readKeyboardHeightVp(ctx).catch(() => DEFAULT_KEYBOARD_HEIGHT_VP),
-        readInputMethod(ctx).catch(() => 'telex' as InputMethodType)
-      ]).then((vals: Array<number | InputMethodType>) => {
+        readInputMethod(ctx).catch(() => 'telex' as InputMethodType),
+        readNumberRowEnabled(ctx).catch(() => DEFAULT_NUMBER_ROW_ENABLED)
+      ]).then((vals: Array<number | InputMethodType | boolean>) => {
         const h: number = vals[0] as number
         const m: InputMethodType = vals[1] as InputMethodType
+        const nrow: boolean = vals[2] as boolean
         this.heightText = String(h)
         this.inputMethod = m
+        this.numberRowEnabled = !!nrow
         this.loading = false
       }).catch((_e: BusinessError) => {
         this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
         this.inputMethod = 'telex'
+        this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED
         this.loading = false
       })
     } catch (e) {
       this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
       this.inputMethod = 'telex'
+      this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED
       this.loading = false
     }
   }
@@ -104,7 +113,21 @@ struct Settings {
       // ignore
     }
     const hVp: number = this.getHeightForRebuild()
-    this.publishRebuild(hVp, m)
+    this.publishRebuild(hVp, m, this.numberRowEnabled)
+  }
+
+  private onToggleNumberRow(next: boolean): void {
+    this.numberRowEnabled = !!next
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
+      writeNumberRowEnabled(ctx, this.numberRowEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+      // Keep same behavior as height changes: bump seq + rebuild keyboard.
+      bumpKeyboardReloadSeq(ctx).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+    } catch {
+      // ignore
+    }
+    const hVp: number = this.getHeightForRebuild()
+    this.publishRebuild(hVp, this.inputMethod, this.numberRowEnabled)
   }
 
   @Builder
@@ -117,9 +140,9 @@ struct Settings {
     }
   }
 
-  private publishRebuild(heightVp: number, method: InputMethodType): void {
+  private publishRebuild(heightVp: number, method: InputMethodType, numberRowEnabled: boolean): void {
     try {
-      const payload: string = JSON.stringify({ heightVp: heightVp, inputMethod: method })
+      const payload: string = JSON.stringify({ heightVp: heightVp, inputMethod: method, numberRowEnabled: !!numberRowEnabled })
       commonEventManager.publish(EVENT_REBUILD_KEYBOARD, { data: payload }, (_err?: BusinessError) => {
         // ignore
       })
@@ -163,8 +186,15 @@ struct Settings {
           // ignore
         }
 
+        // Persist number-row setting (UIAbility pref)
+        try {
+          writeNumberRowEnabled(ctx, this.numberRowEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+        } catch {
+          // ignore
+        }
+
         // ✅ GỘP REBUILD VÀO NÚT LƯU
-        this.publishRebuild(n, this.inputMethod)
+        this.publishRebuild(n, this.inputMethod, this.numberRowEnabled)
 
         this.saving = false
         this.showToast('Đã lưu cài đặt.')
@@ -226,6 +256,26 @@ struct Settings {
             }
             .width('100%')
             .margin({ top: 12 })
+
+            // Number row toggle
+            Row() {
+              Text('Hàng phím số')
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+                .textAlign(TextAlign.Start)
+
+              Text(this.numberRowEnabled ? 'Bật' : 'Tắt')
+                .fontSize(14)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .width('100%')
+            .height(44)
+            .padding({ left: 12, right: 12 })
+            .margin({ top: 10 })
+            .borderRadius(10)
+            .backgroundColor($r('app.color.page_bg'))
+            .onClick(() => this.onToggleNumberRow(!this.numberRowEnabled))
 
             Divider().margin({ top: 16, bottom: 16 })
 

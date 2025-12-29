@@ -5,6 +5,8 @@ export {
   PREF_NAME,
   KEY_KEYBOARD_HEIGHT_VP,
   KEY_KEYBOARD_RELOAD_SEQ,
+  KEY_NUMBER_ROW_ENABLED,
+  DEFAULT_NUMBER_ROW_ENABLED,
   DEFAULT_KEYBOARD_HEIGHT_VP,
   MIN_KEYBOARD_HEIGHT_VP,
   MAX_KEYBOARD_HEIGHT_VP,
@@ -12,5 +14,7 @@ export {
   readKeyboardHeightVp,
   writeKeyboardHeightVp,
   readKeyboardReloadSeq,
-  bumpKeyboardReloadSeq
+  bumpKeyboardReloadSeq,
+  readNumberRowEnabled,
+  writeNumberRowEnabled
 } from '../pages/SettingsStore';

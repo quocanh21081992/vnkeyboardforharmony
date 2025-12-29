@@ -35,6 +35,23 @@ function sp(id: string, weight: number): KeyData {
 }
 
 /**
+ * ✅ Hàng phím số cho layout ABC (bật/tắt trong Cài đặt)
+ * 1 2 3 4 5 6 7 8 9 0
+ */
+export const KEYBOARD_ROW_NUM: Array<KeyData> = [
+  k('num1', KeyKind.Char, '1', '1', 1),
+  k('num2', KeyKind.Char, '2', '2', 1),
+  k('num3', KeyKind.Char, '3', '3', 1),
+  k('num4', KeyKind.Char, '4', '4', 1),
+  k('num5', KeyKind.Char, '5', '5', 1),
+  k('num6', KeyKind.Char, '6', '6', 1),
+  k('num7', KeyKind.Char, '7', '7', 1),
+  k('num8', KeyKind.Char, '8', '8', 1),
+  k('num9', KeyKind.Char, '9', '9', 1),
+  k('num0', KeyKind.Char, '0', '0', 1)
+];
+
+/**
  * ✅ Layout chính (KHÔNG có hàng số)
  * Row 0: qwertyuiop
  * Row 1: asdfghjkl (có spacer trái/phải để thụt vào giống bàn phím chuẩn)
@@ -145,6 +162,19 @@ export const KEYBOARD_ROWS_CAPS: Array<Array<KeyData>> = [
     k('dot', KeyKind.Char, '.', '.', 1.0),
     k('enter', KeyKind.Enter, '⏎', '\n', 1.5)
   ]
+];
+
+/**
+ * ✅ Layout ABC + hàng số (bật trong Cài đặt)
+ */
+export const KEYBOARD_ROWS_MAIN_NUM: Array<Array<KeyData>> = [
+  KEYBOARD_ROW_NUM,
+  ...KEYBOARD_ROWS_MAIN
+];
+
+export const KEYBOARD_ROWS_CAPS_NUM: Array<Array<KeyData>> = [
+  KEYBOARD_ROW_NUM,
+  ...KEYBOARD_ROWS_CAPS
 ];
 
 

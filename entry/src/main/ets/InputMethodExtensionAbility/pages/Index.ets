@@ -2,7 +2,9 @@
 import keyboardController from '../model/KeyboardControllerSingleton';
 import {
   KEYBOARD_ROWS_MAIN,
+  KEYBOARD_ROWS_MAIN_NUM,
   KEYBOARD_ROWS_CAPS,
+  KEYBOARD_ROWS_CAPS_NUM,
   KEYBOARD_ROWS_123,
   KEYBOARD_ROWS_123_MORE,
   KeyData,
@@ -10,11 +12,19 @@ import {
 } from './KeyboardKeyData';
 
 import { BusinessError, commonEventManager } from '@kit.BasicServicesKit';
-import { readKeyboardHeightVp, DEFAULT_KEYBOARD_HEIGHT_VP, clampKeyboardHeightVp } from '../model/SettingsStore';
+import {
+  readKeyboardHeightVp,
+  DEFAULT_KEYBOARD_HEIGHT_VP,
+  clampKeyboardHeightVp,
+  readNumberRowEnabled,
+  writeNumberRowEnabled,
+  DEFAULT_NUMBER_ROW_ENABLED
+} from '../model/SettingsStore';
 
 interface RebuildPayload {
   heightVp?: number;
   inputMethod?: string;
+  numberRowEnabled?: boolean;
 }
 
 
@@ -89,9 +99,16 @@ struct Index {
   @State private isLayout123: boolean = false;
   @State private isLayoutMore: boolean = false;
 
+  // ✅ Setting: show number row on ABC layout
+  @State private numberRowEnabled: boolean = DEFAULT_NUMBER_ROW_ENABLED;
+
   // ✅ Foldable / cover screen correction
   @State private panelScale: number = 1.0;
   private wantedTotalVp: number = 0;
+
+  // ✅ Keep the last configured content height (PreviewBar + KeyboardBody) in vp.
+  // Used to compute dynamic row spacing for layouts with fewer rows (e.g. 123).
+  private contentHeightVp: number = DEFAULT_KEYBOARD_HEIGHT_VP;
 
   private lastShiftTapMs: number = 0;
   private SHIFT_DOUBLE_TAP_MS: number = 320;
@@ -107,6 +124,7 @@ struct Index {
 
   aboutToAppear() {
     this.loadHeightSetting();
+    this.loadNumberRowSetting();
     this.setupRebuildSubscriber();
 
     if (!this.sessionStartCb) {
@@ -117,6 +135,19 @@ struct Index {
     }
 
     this.resetUiState();
+  }
+
+  private loadNumberRowSetting(): void {
+    try {
+      const ctx: object = this.getUIContext().getHostContext() as object;
+      readNumberRowEnabled(ctx).then((on: boolean) => {
+        this.numberRowEnabled = !!on;
+      }).catch(() => {
+        this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED;
+      });
+    } catch {
+      this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED;
+    }
   }
 
   aboutToDisappear() {
@@ -143,8 +174,9 @@ struct Index {
           const raw: string = String(data.data ?? '');
           let nextHeightVp: number | undefined = undefined;
           let nextInputMethod: string | undefined = undefined;
+          let nextNumberRow: boolean | undefined = undefined;
 
-          // Newer payload: JSON { heightVp, inputMethod }
+          // Newer payload: JSON { heightVp, inputMethod, numberRowEnabled }
           const t: string = raw.trim();
           if (t.startsWith('{') && t.endsWith('}')) {
             try {
@@ -155,6 +187,9 @@ struct Index {
               if (typeof obj.inputMethod === 'string') {
                 const m: string = obj.inputMethod.toLowerCase();
                 if (m === 'vni' || m === 'telex') nextInputMethod = m;
+              }
+              if (typeof obj.numberRowEnabled === 'boolean') {
+                nextNumberRow = obj.numberRowEnabled;
               }
             } catch {
               // ignore
@@ -169,6 +204,8 @@ struct Index {
 
           const hVp: number = clampKeyboardHeightVp(nextHeightVp !== undefined ? nextHeightVp : DEFAULT_KEYBOARD_HEIGHT_VP);
 
+          this.contentHeightVp = hVp;
+
           // remember wanted total for foldable correction
           this.wantedTotalVp = hVp + this.s.safeBottom;
 
@@ -176,6 +213,17 @@ struct Index {
           try { keyboardController.applyKeyboardHeightVp(hVp); } catch { /* ignore */ }
           if (nextInputMethod) {
             try { keyboardController.applyInputMethod(nextInputMethod === 'vni' ? 'vni' : 'telex'); } catch { /* ignore */ }
+          }
+
+          if (nextNumberRow !== undefined) {
+            this.numberRowEnabled = !!nextNumberRow;
+            // Persist in IME process so next session uses it.
+            try {
+              const ctx: object = this.getUIContext().getHostContext() as object;
+              writeNumberRowEnabled(ctx, this.numberRowEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ });
+            } catch {
+              // ignore
+            }
           }
 
           // rebuild UI scale
@@ -210,20 +258,28 @@ struct Index {
       const ctx: object = this.getUIContext().getHostContext() as object;
       readKeyboardHeightVp(ctx).then((hVp: number) => {
         const safe: number = clampKeyboardHeightVp(hVp);
+        this.contentHeightVp = safe;
         this.wantedTotalVp = safe + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(safe);
       }).catch(() => {
+        this.contentHeightVp = DEFAULT_KEYBOARD_HEIGHT_VP;
         this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
       });
     } catch {
+      this.contentHeightVp = DEFAULT_KEYBOARD_HEIGHT_VP;
       this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
       this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
     }
   }
 
   private applyScaleFromContentHeightVp(heightVp: number): void {
-    const base: number = DEFAULT_KEYBOARD_HEIGHT_VP;
+    this.contentHeightVp = heightVp;
+    // DEFAULT_KEYBOARD_HEIGHT_VP is tuned for ABC without the number row (4 rows).
+    // When enabling the 1–0 number row we add one more row, so we shrink scale to
+    // avoid clipping the bottom row (space/enter).
+    const extraRowBaseVp: number = 44 + 8; // keyH + gapY at scale=1
+    const base: number = DEFAULT_KEYBOARD_HEIGHT_VP + (this.numberRowEnabled ? extraRowBaseVp : 0);
     const rawScale: number = base > 0 ? (heightVp / base) : 1;
     const scale0: number = Math.max(0.70, Math.min(1.40, rawScale));
 
@@ -547,12 +603,33 @@ struct Index {
   }
 
   private getAbcRows(): Array<Array<KeyData>> {
-    return (this.capsOn || this.shiftOnce) ? KEYBOARD_ROWS_CAPS : KEYBOARD_ROWS_MAIN;
+    const caps: boolean = (this.capsOn || this.shiftOnce);
+    if (this.numberRowEnabled) {
+      return caps ? KEYBOARD_ROWS_CAPS_NUM : KEYBOARD_ROWS_MAIN_NUM;
+    }
+    return caps ? KEYBOARD_ROWS_CAPS : KEYBOARD_ROWS_MAIN;
   }
 
   private keyModePrefix(): string {
     return (this.capsOn || this.shiftOnce) ? 'caps' : 'main';
   }
+
+  private effectiveGapY(rowsCount: number): number {
+    if (rowsCount <= 1) return 0;
+
+    // Height available for KeyboardBody (exclude PreviewBar height).
+    const bodyAvail: number = Math.max(0, this.contentHeightVp - this.s.keyH);
+
+    // If we're already tight, keep the base gap.
+    const baseGap: number = this.s.gapY;
+    const minNeeded: number = rowsCount * this.s.keyH + (rowsCount - 1) * baseGap;
+    if (bodyAvail <= minNeeded) return baseGap;
+
+    // Distribute extra space into the gaps between rows.
+    const gap: number = Math.floor((bodyAvail - rowsCount * this.s.keyH) / (rowsCount - 1));
+    return Math.max(baseGap, gap);
+  }
+
 
   @Builder
   private PreviewBar() {
@@ -579,38 +656,47 @@ struct Index {
     .justifyContent(FlexAlign.Center);
   }
 
+  private currentRows(): Array<Array<KeyData>> {
+    if (this.isLayout123) {
+      return this.isLayoutMore ? KEYBOARD_ROWS_123_MORE : KEYBOARD_ROWS_123;
+    }
+    return this.getAbcRows();
+  }
+
+  private currentRowCount(): number {
+    return this.currentRows().length;
+  }
+
+
   @Builder
   private KeyboardBody() {
     Column() {
-      if (this.isLayout123) {
-        ForEach(this.isLayoutMore ? KEYBOARD_ROWS_123_MORE : KEYBOARD_ROWS_123,
-          (row: Array<KeyData>, ri: number) => {
-            Row() {
-              ForEach(row, (k: KeyData) => {
+      ForEach(
+        this.currentRows(),
+        (row: Array<KeyData>, ri: number) => {
+          Row() {
+            ForEach(
+              row,
+              (k: KeyData) => {
                 this.KeyView(k);
-              }, (k: KeyData) => k.id);
-            }
-            .width('100%')
-            .height(this.s.keyH)
-            .margin({ top: ri === 0 ? 0 : this.s.gapY });
-          },
-          (_row: Array<KeyData>, i: number) => (this.isLayoutMore ? 'm' : 's') + String(i)
-        );
-      } else {
-        ForEach(this.getAbcRows(),
-          (row: Array<KeyData>, ri: number) => {
-            Row() {
-              ForEach(row, (k: KeyData) => {
-                this.KeyView(k);
-              }, (k: KeyData) => this.keyModePrefix() + '_' + k.id);
-            }
-            .width('100%')
-            .height(this.s.keyH)
-            .margin({ top: ri === 0 ? 0 : this.s.gapY });
-          },
-          (_row: Array<KeyData>, i: number) => this.keyModePrefix() + '_m' + String(i)
-        );
-      }
+              },
+              (k: KeyData) => {
+                // Make keys stable across toggles to avoid row-reuse glitches.
+                if (this.isLayout123) return (this.isLayoutMore ? 'm' : 's') + '_' + k.id;
+                return this.keyModePrefix() + '_' + (this.numberRowEnabled ? 'nr1_' : 'nr0_') + k.id;
+              }
+            );
+          }
+          .width('100%')
+          .height(this.s.keyH)
+          .margin({ top: ri === 0 ? 0 : this.effectiveGapY(this.currentRowCount()) });
+        },
+        (_row: Array<KeyData>, i: number) => {
+          if (this.isLayout123) return (this.isLayoutMore ? 'm' : 's') + '_m' + String(i);
+          // Include numberRowEnabled so toggling it won't reuse wrong rows (fix duplicated bottom row).
+          return this.keyModePrefix() + '_' + (this.numberRowEnabled ? 'nr1' : 'nr0') + '_m' + String(i);
+        }
+      );
     }
     .width('100%')
     .padding({ left: this.s.padding, right: this.s.padding });

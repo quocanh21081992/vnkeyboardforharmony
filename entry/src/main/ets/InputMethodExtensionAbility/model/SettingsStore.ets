@@ -7,6 +7,10 @@ export const PREF_NAME: string = 'vk_settings_ime';
 export const KEY_KEYBOARD_HEIGHT_VP: string = 'keyboard_height_vp';
 export const KEY_KEYBOARD_RELOAD_SEQ: string = 'keyboard_reload_seq';
 
+// Show number row on ABC layout
+export const KEY_NUMBER_ROW_ENABLED: string = 'number_row_enabled';
+export const DEFAULT_NUMBER_ROW_ENABLED: boolean = true;
+
 // Input method: 'telex' | 'vni'
 export const KEY_INPUT_METHOD: string = 'input_method';
 export type InputMethodType = 'telex' | 'vni';
@@ -33,6 +37,15 @@ function toNumber(v: number | string | boolean, fallback: number): number {
   if (typeof v === 'number') return v;
   const n: number = Number(String(v));
   return Number.isFinite(n) ? n : fallback;
+}
+
+function toBool(v: number | string | boolean, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+  const s: string = String(v).trim().toLowerCase();
+  if (s === '1' || s === 'true' || s === 'on' || s === 'yes') return true;
+  if (s === '0' || s === 'false' || s === 'off' || s === 'no') return false;
+  return fallback;
 }
 
 export async function readKeyboardHeightVp(context: object): Promise<number> {
@@ -137,6 +150,31 @@ export async function writeInputMethod(context: object, method: InputMethodType)
     } catch {
       // ignore
     }
+  } catch {
+    // ignore
+  }
+}
+
+export async function readNumberRowEnabled(context: object): Promise<boolean> {
+  try {
+    try { await preferences.removePreferencesFromCache(context as never, PREF_NAME); } catch { /* ignore */ }
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const raw: number | string | boolean = (await pref.get(
+      KEY_NUMBER_ROW_ENABLED,
+      DEFAULT_NUMBER_ROW_ENABLED
+    )) as number | string | boolean;
+    return toBool(raw, DEFAULT_NUMBER_ROW_ENABLED);
+  } catch {
+    return DEFAULT_NUMBER_ROW_ENABLED;
+  }
+}
+
+export async function writeNumberRowEnabled(context: object, enabled: boolean): Promise<void> {
+  try {
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const v: boolean = !!enabled;
+    try { pref.put(KEY_NUMBER_ROW_ENABLED, v); } catch { /* ignore */ }
+    try { await pref.flush(); } catch { /* ignore */ }
   } catch {
     // ignore
   }
