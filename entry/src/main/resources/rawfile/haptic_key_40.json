@@ -1,0 +1,30 @@
+{
+  "ChannelNumber": 1,
+  "DeviceId": 0,
+  "MetaData": {
+    "Create": "VnTelexKeyboard",
+    "Description": "Key press haptic",
+    "Version": 1,
+    "ChannelNumber": 1,
+    "DeviceId": 0
+  },
+  "Channels": [
+    {
+      "Parameters": {
+        "Index": 0
+      },
+      "Pattern": [
+        {
+          "Event": {
+            "Type": "transient",
+            "StartTime": 0,
+            "Parameters": {
+              "Intensity": 40,
+              "Frequency": 50
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

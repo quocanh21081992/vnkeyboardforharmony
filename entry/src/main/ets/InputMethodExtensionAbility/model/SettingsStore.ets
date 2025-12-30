@@ -11,6 +11,14 @@ export const KEY_KEYBOARD_RELOAD_SEQ: string = 'keyboard_reload_seq';
 export const KEY_NUMBER_ROW_ENABLED: string = 'number_row_enabled';
 export const DEFAULT_NUMBER_ROW_ENABLED: boolean = true;
 
+// Haptic feedback (vibration on key press)
+export const KEY_HAPTIC_ENABLED: string = 'haptic_enabled';
+export const DEFAULT_HAPTIC_ENABLED: boolean = true;
+export const KEY_HAPTIC_INTENSITY: string = 'haptic_intensity';
+// 0..100 (relative)
+export const DEFAULT_HAPTIC_INTENSITY: number = 60;
+
+
 // Input method: 'telex' | 'vni'
 export const KEY_INPUT_METHOD: string = 'input_method';
 export type InputMethodType = 'telex' | 'vni';
@@ -30,6 +38,14 @@ export function clampKeyboardHeightVp(v: number): number {
   if (n > MAX_KEYBOARD_HEIGHT_VP) n = MAX_KEYBOARD_HEIGHT_VP;
   return n;
 }
+export function clampHapticIntensity(v: number): number {
+  let n: number = Math.round(v);
+  if (!isFinite(n)) return DEFAULT_HAPTIC_INTENSITY;
+  if (n < 0) n = 0;
+  if (n > 100) n = 100;
+  return n;
+}
+
 
 // NOTE: Some projects enable strict lint rules for types.
 // preferences.get() returns primitive types, so keep the conversion explicit here.
@@ -174,6 +190,54 @@ export async function writeNumberRowEnabled(context: object, enabled: boolean): 
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
     const v: boolean = !!enabled;
     try { pref.put(KEY_NUMBER_ROW_ENABLED, v); } catch { /* ignore */ }
+    try { await pref.flush(); } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
+}
+
+export async function readHapticEnabled(context: object): Promise<boolean> {
+  try {
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const raw: number | string | boolean = (await pref.get(
+      KEY_HAPTIC_ENABLED,
+      DEFAULT_HAPTIC_ENABLED
+    )) as number | string | boolean;
+    return toBool(raw, DEFAULT_HAPTIC_ENABLED);
+  } catch {
+    return DEFAULT_HAPTIC_ENABLED;
+  }
+}
+
+export async function writeHapticEnabled(context: object, enabled: boolean): Promise<void> {
+  try {
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const v: boolean = !!enabled;
+    try { pref.put(KEY_HAPTIC_ENABLED, v); } catch { /* ignore */ }
+    try { await pref.flush(); } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
+}
+
+export async function readHapticIntensity(context: object): Promise<number> {
+  try {
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const raw: number | string | boolean = (await pref.get(
+      KEY_HAPTIC_INTENSITY,
+      DEFAULT_HAPTIC_INTENSITY
+    )) as number | string | boolean;
+    return clampHapticIntensity(toNumber(raw, DEFAULT_HAPTIC_INTENSITY));
+  } catch {
+    return DEFAULT_HAPTIC_INTENSITY;
+  }
+}
+
+export async function writeHapticIntensity(context: object, intensity: number): Promise<void> {
+  try {
+    const pref = await preferences.getPreferences(context as never, PREF_NAME);
+    const v: number = clampHapticIntensity(intensity);
+    try { pref.put(KEY_HAPTIC_INTENSITY, v); } catch { /* ignore */ }
     try { await pref.flush(); } catch { /* ignore */ }
   } catch {
     // ignore

@@ -74,7 +74,7 @@
     },
     {
       "name": "settings_height_range",
-      "value": "Giá trị hợp lệ: %d - %d vp."
+      "value": "Giá trị hợp lệ: %d - %d."
     },
     {
       "name": "settings_reset",
@@ -102,7 +102,7 @@
     },
     {
       "name": "settings_note_body",
-      "value": "Sau khi thay đổi, hãy đóng/mở lại bàn phím để áp dụng (đóng/mở lại ô nhập hoặc chuyển ứng dụng)."
+      "value": "Ứng dụng Vietnam Keyboard cần được bật Chế độ đầy đủ trong phần Cài đặt > Hệ thống > Phương thức nhập để có thể sử dụng được các tuỳ chỉnh."
     },
     {
       "name": "about_header",

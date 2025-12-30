@@ -12,19 +12,45 @@ import {
 } from './KeyboardKeyData';
 
 import { BusinessError, commonEventManager } from '@kit.BasicServicesKit';
+import vibrator from '@ohos.vibrator';
 import {
   readKeyboardHeightVp,
   DEFAULT_KEYBOARD_HEIGHT_VP,
   clampKeyboardHeightVp,
   readNumberRowEnabled,
   writeNumberRowEnabled,
-  DEFAULT_NUMBER_ROW_ENABLED
+  DEFAULT_NUMBER_ROW_ENABLED,
+  readHapticEnabled,
+  writeHapticEnabled,
+  readHapticIntensity,
+  writeHapticIntensity,
+  DEFAULT_HAPTIC_ENABLED,
+  DEFAULT_HAPTIC_INTENSITY
 } from '../model/SettingsStore';
 
 interface RebuildPayload {
   heightVp?: number;
   inputMethod?: string;
   numberRowEnabled?: boolean;
+  hapticEnabled?: boolean;
+  hapticIntensity?: number;
+}
+
+// ---- Haptic helper types (avoid any/unknown for arkts-no-any-unknown) ----
+interface RawFdLike {
+  fd: number;
+  offset: number;
+  length: number;
+}
+
+interface ResourceManagerLike {
+  getRawFdSync(name: string): RawFdLike;
+  // Some HarmonyOS SDKs expose closeRawFdSync; keep optional to satisfy ArkTSCheck
+  closeRawFdSync?(rawFd: RawFdLike): void;
+}
+
+interface HostContextLike {
+  resourceManager?: ResourceManagerLike;
 }
 
 
@@ -91,6 +117,11 @@ struct Index {
 
   @State private pressedKeyId: string = '';
 
+  // Haptic (vibration on key press)
+  private hapticEnabled: boolean = DEFAULT_HAPTIC_ENABLED;
+  private hapticIntensity: number = DEFAULT_HAPTIC_INTENSITY;
+  private hapticBucketValue: number = 60;
+
   @State private popupVisible: boolean = false;
   @State private popupLabel: string = '';
   @State private popupX: number = 0;
@@ -108,7 +139,6 @@ struct Index {
 
   // ✅ Keep the last configured content height (PreviewBar + KeyboardBody) in vp.
   // Used to compute dynamic row spacing for layouts with fewer rows (e.g. 123).
-  private contentHeightVp: number = DEFAULT_KEYBOARD_HEIGHT_VP;
 
   private lastShiftTapMs: number = 0;
   private SHIFT_DOUBLE_TAP_MS: number = 320;
@@ -125,6 +155,7 @@ struct Index {
   aboutToAppear() {
     this.loadHeightSetting();
     this.loadNumberRowSetting();
+    this.loadHapticSetting();
     this.setupRebuildSubscriber();
 
     if (!this.sessionStartCb) {
@@ -156,6 +187,89 @@ struct Index {
     if (this.sessionStartCb) {
       keyboardController.removeSessionStartListener(this.sessionStartCb);
       this.sessionStartCb = undefined;
+    }
+  }
+  private loadHapticSetting(): void {
+    try {
+      const ctx: object = this.getUIContext().getHostContext() as object;
+      Promise.all([
+        readHapticEnabled(ctx).catch(() => DEFAULT_HAPTIC_ENABLED),
+        readHapticIntensity(ctx).catch(() => DEFAULT_HAPTIC_INTENSITY)
+      ]).then((vals: Array<boolean | number>) => {
+        const en: boolean = vals[0] as boolean;
+        const it: number = vals[1] as number;
+        this.applyHapticSetting(!!en, Number.isFinite(it) ? (it as number) : DEFAULT_HAPTIC_INTENSITY, false);
+      }).catch(() => {
+        this.applyHapticSetting(DEFAULT_HAPTIC_ENABLED, DEFAULT_HAPTIC_INTENSITY, false);
+      });
+    } catch {
+      this.applyHapticSetting(DEFAULT_HAPTIC_ENABLED, DEFAULT_HAPTIC_INTENSITY, false);
+    }
+  }
+
+  private applyHapticSetting(enabled: boolean, intensity: number, persist: boolean): void {
+    this.hapticEnabled = !!enabled;
+    this.hapticIntensity = Math.round(intensity);
+    if (!Number.isFinite(this.hapticIntensity)) this.hapticIntensity = DEFAULT_HAPTIC_INTENSITY;
+    if (this.hapticIntensity < 0) this.hapticIntensity = 0;
+    if (this.hapticIntensity > 100) this.hapticIntensity = 100;
+
+    this.hapticBucketValue = this.getHapticBucket(this.hapticIntensity);
+
+    if (persist) {
+      try {
+        const ctx: object = this.getUIContext().getHostContext() as object;
+        writeHapticEnabled(ctx, this.hapticEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ });
+        writeHapticIntensity(ctx, this.hapticIntensity).then(() => { /* ignore */ }).catch(() => { /* ignore */ });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private getHapticBucket(intensity: number): number {
+    // Map 0..100 → 0 or {10,20,...,100} for selecting rawfile haptic configs.
+    if (!this.hapticEnabled) return 0;
+    if (intensity <= 0) return 0;
+    let b: number = Math.round(intensity / 10) * 10;
+    if (b < 10) b = 10;
+    if (b > 100) b = 100;
+    return b;
+  }
+
+  private tryHaptic(): void {
+    if (!this.hapticEnabled) return;
+    if (this.hapticBucketValue <= 0) return;
+
+    const fileName: string = `haptic_key_${this.hapticBucketValue}.json`;
+
+    try {
+      const ctx = this.getUIContext().getHostContext();
+      if (!ctx) return;
+
+      const rm = ctx.resourceManager;
+      if (!rm) return;
+
+      const rawFd = rm.getRawFdSync(fileName);
+
+      // Try custom haptic file first.
+      vibrator.startVibration(
+        { type: 'file', hapticFd: { fd: rawFd.fd, offset: rawFd.offset, length: rawFd.length } },
+        { id: 0, usage: 'unknown' }
+      ).catch(() => {
+        // Fallback: time vibration (some devices/versions may reject custom JSON).
+        const duration: number = Math.max(5, Math.min(25, Math.round(5 + (this.hapticBucketValue * 0.2))));
+        vibrator.startVibration({ type: 'time', duration }, { id: 0, usage: 'unknown' }).catch(() => {});
+      });
+
+      // SDK của bạn đang dùng closeRawFdSync(string)
+      try {
+        rm.closeRawFdSync(fileName);
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -204,7 +318,6 @@ struct Index {
 
           const hVp: number = clampKeyboardHeightVp(nextHeightVp !== undefined ? nextHeightVp : DEFAULT_KEYBOARD_HEIGHT_VP);
 
-          this.contentHeightVp = hVp;
 
           // remember wanted total for foldable correction
           this.wantedTotalVp = hVp + this.s.safeBottom;
@@ -258,23 +371,19 @@ struct Index {
       const ctx: object = this.getUIContext().getHostContext() as object;
       readKeyboardHeightVp(ctx).then((hVp: number) => {
         const safe: number = clampKeyboardHeightVp(hVp);
-        this.contentHeightVp = safe;
         this.wantedTotalVp = safe + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(safe);
       }).catch(() => {
-        this.contentHeightVp = DEFAULT_KEYBOARD_HEIGHT_VP;
         this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
         this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
       });
     } catch {
-      this.contentHeightVp = DEFAULT_KEYBOARD_HEIGHT_VP;
       this.wantedTotalVp = DEFAULT_KEYBOARD_HEIGHT_VP + this.s.safeBottom;
       this.applyScaleFromContentHeightVp(DEFAULT_KEYBOARD_HEIGHT_VP);
     }
   }
 
   private applyScaleFromContentHeightVp(heightVp: number): void {
-    this.contentHeightVp = heightVp;
     // DEFAULT_KEYBOARD_HEIGHT_VP is tuned for ABC without the number row (4 rows).
     // When enabling the 1–0 number row we add one more row, so we shrink scale to
     // avoid clipping the bottom row (space/enter).
@@ -520,6 +629,7 @@ struct Index {
     if (e.type === TouchType.Down) {
       this.pressedKeyId = k.id;
       this.showPopupForKey(k);
+      this.tryHaptic();
 
       if (k.kind !== KeyKind.Backspace) {
         this.onKey(k);
@@ -555,10 +665,10 @@ struct Index {
   }
 
   @Builder
-  private KeyView(k: KeyData) {
+  private KeyView(k: KeyData, rowH: number) {
     if (k.kind === KeyKind.Spacer) {
       Blank()
-        .height(this.s.keyH)
+        .height(rowH)
         .margin({ left: this.s.gapX / 2, right: this.s.gapX / 2 })
         .layoutWeight(k.weight);
     } else {
@@ -585,7 +695,7 @@ struct Index {
             .fontWeight(this.isFn(k) ? FontWeight.Medium : FontWeight.Regular);
         }
       }
-      .height(this.s.keyH)
+      .height(rowH)
       .margin({ left: this.s.gapX / 2, right: this.s.gapX / 2 })
       .borderRadius(this.s.radius)
       .backgroundColor(this.bgColorOf(k))
@@ -614,20 +724,32 @@ struct Index {
     return (this.capsOn || this.shiftOnce) ? 'caps' : 'main';
   }
 
-  private effectiveGapY(rowsCount: number): number {
-    if (rowsCount <= 1) return 0;
+  private effectiveGapY(_rowsCount: number): number {
+    // Keep row spacing consistent with ABC layout.
+    return this.s.gapY;
+  }
 
-    // Height available for KeyboardBody (exclude PreviewBar height).
-    const bodyAvail: number = Math.max(0, this.contentHeightVp - this.s.keyH);
+  private keyboardBodyTargetHeight(): number {
+    // Target height of the keyboard body area (excluding PreviewBar),
+    // based on the current ABC layout (with/without number row).
+    const baseRows: number = this.getAbcRows().length;
+    if (baseRows <= 0) return 0;
+    return baseRows * this.s.keyH + (baseRows - 1) * this.s.gapY;
+  }
 
-    // If we're already tight, keep the base gap.
-    const baseGap: number = this.s.gapY;
-    const minNeeded: number = rowsCount * this.s.keyH + (rowsCount - 1) * baseGap;
-    if (bodyAvail <= minNeeded) return baseGap;
+  private rowHeightForIndex(ri: number, rowsCount: number): number {
+    if (rowsCount <= 0) return this.s.keyH;
+    // Keep the bottom row (space/enter row) the same height as ABC.
+    if (ri === rowsCount - 1) return this.s.keyH;
 
-    // Distribute extra space into the gaps between rows.
-    const gap: number = Math.floor((bodyAvail - rowsCount * this.s.keyH) / (rowsCount - 1));
-    return Math.max(baseGap, gap);
+    const topCount: number = Math.max(1, rowsCount - 1);
+    const target: number = this.keyboardBodyTargetHeight();
+    const gapTotal: number = Math.max(0, (rowsCount - 1) * this.s.gapY);
+    const remain: number = Math.max(0, target - this.s.keyH - gapTotal);
+    const h: number = Math.floor(remain / topCount);
+
+    // Never shrink below the normal key height.
+    return Math.max(this.s.keyH, h);
   }
 
 
@@ -678,7 +800,7 @@ struct Index {
             ForEach(
               row,
               (k: KeyData) => {
-                this.KeyView(k);
+                this.KeyView(k, this.rowHeightForIndex(ri, this.currentRowCount()));
               },
               (k: KeyData) => {
                 // Make keys stable across toggles to avoid row-reuse glitches.
@@ -688,7 +810,7 @@ struct Index {
             );
           }
           .width('100%')
-          .height(this.s.keyH)
+          .height(this.rowHeightForIndex(ri, this.currentRowCount()))
           .margin({ top: ri === 0 ? 0 : this.effectiveGapY(this.currentRowCount()) });
         },
         (_row: Array<KeyData>, i: number) => {
@@ -741,6 +863,7 @@ struct Index {
       }
     })
     .width('100%')
+    .height(this.keyboardBodyTargetHeight())
     .height('100%');
   }
 }

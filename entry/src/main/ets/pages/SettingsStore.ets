@@ -1,60 +1,74 @@
-// entry/src/main/ets/pages/SettingsStore.ets
-// Settings store for the app UIAbility pages.
-
 import preferences from '@ohos.data.preferences';
 
 export const PREF_NAME: string = 'vk_settings_app';
-export const KEY_KEYBOARD_HEIGHT_VP: string = 'keyboard_height_vp';
-export const KEY_KEYBOARD_RELOAD_SEQ: string = 'keyboard_reload_seq';
 
-// Show number row on ABC layout
-export const KEY_NUMBER_ROW_ENABLED: string = 'number_row_enabled';
+export const KEYBOARD_HEIGHT_VP: string = 'keyboard_height_vp';
+export const DEFAULT_KEYBOARD_HEIGHT_VP: number = 240;
+
+export const MIN_KEYBOARD_HEIGHT_VP: number = 200;
+export const MAX_KEYBOARD_HEIGHT_VP: number = 320;
+
+export const KEYBOARD_RELOAD_SEQ: string = 'keyboard_reload_seq';
+
+// input method: 'telex' | 'vni'
+export const INPUT_METHOD: string = 'input_method';
+
+// number row on/off
+export const NUMBER_ROW_ENABLED: string = 'number_row_enabled';
 export const DEFAULT_NUMBER_ROW_ENABLED: boolean = true;
 
-// Input method: 'telex' | 'vni'
-export const KEY_INPUT_METHOD: string = 'input_method';
-export type InputMethodType = 'telex' | 'vni';
-export const DEFAULT_INPUT_METHOD: InputMethodType = 'telex';
+// Haptic feedback (vibration on key press)
+export const KEY_HAPTIC_ENABLED: string = 'haptic_enabled';
+export const DEFAULT_HAPTIC_ENABLED: boolean = true;
+export const KEY_HAPTIC_INTENSITY: string = 'haptic_intensity';
+// 0..100 (relative)
+export const DEFAULT_HAPTIC_INTENSITY: number = 60;
 
-// Defaults / bounds (vp)
-export const DEFAULT_KEYBOARD_HEIGHT_VP: number = 270;
-export const MIN_KEYBOARD_HEIGHT_VP: number = 180;
-export const MAX_KEYBOARD_HEIGHT_VP: number = 420;
+export type InputMethodType = 'telex' | 'vni';
+
+function toNumber(v: number | string | boolean | undefined, fallback: number): number {
+  if (v === undefined || v === null) return fallback;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+
+  const s: string = String(v);
+  const m = s.match(/-?\d+(\.\d+)?/);
+  if (m && m[0]) return Number(m[0]);
+  return fallback;
+}
+
+function toBool(v: number | string | boolean | undefined, fallback: boolean): boolean {
+  if (v === undefined || v === null) return fallback;
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+
+  const s: string = String(v).trim().toLowerCase();
+  if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+  if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
+  return fallback;
+}
 
 export function clampKeyboardHeightVp(v: number): number {
   let n: number = Math.round(v);
-  if (!isFinite(n)) {
-    return DEFAULT_KEYBOARD_HEIGHT_VP;
-  }
+  if (!isFinite(n)) return DEFAULT_KEYBOARD_HEIGHT_VP;
   if (n < MIN_KEYBOARD_HEIGHT_VP) n = MIN_KEYBOARD_HEIGHT_VP;
   if (n > MAX_KEYBOARD_HEIGHT_VP) n = MAX_KEYBOARD_HEIGHT_VP;
   return n;
 }
 
-// NOTE: Some projects enable strict lint rules for types.
-// preferences.get() returns primitive types, so keep the conversion explicit here.
-function toNumber(v: number | string | boolean, fallback: number): number {
-  if (typeof v === 'number') return v;
-  const n: number = Number(String(v));
-  return Number.isFinite(n) ? n : fallback;
+export function clampHapticIntensity(v: number): number {
+  let n: number = Math.round(v);
+  if (!isFinite(n)) return DEFAULT_HAPTIC_INTENSITY;
+  if (n < 0) n = 0;
+  if (n > 100) n = 100;
+  return n;
 }
 
-function toBool(v: number | string | boolean, fallback: boolean): boolean {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  const s: string = String(v).trim().toLowerCase();
-  if (s === '1' || s === 'true' || s === 'on' || s === 'yes') return true;
-  if (s === '0' || s === 'false' || s === 'off' || s === 'no') return false;
-  return fallback;
-}
-
+// NOTE: using object for context to avoid importing UIAbilityContext types
 export async function readKeyboardHeightVp(context: object): Promise<number> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(
-      KEY_KEYBOARD_HEIGHT_VP,
-      DEFAULT_KEYBOARD_HEIGHT_VP
-    )) as number | string | boolean;
+    const raw: number | string | boolean = (await pref.get(KEYBOARD_HEIGHT_VP, DEFAULT_KEYBOARD_HEIGHT_VP)) as number | string | boolean;
     return clampKeyboardHeightVp(toNumber(raw, DEFAULT_KEYBOARD_HEIGHT_VP));
   } catch {
     return DEFAULT_KEYBOARD_HEIGHT_VP;
@@ -65,33 +79,32 @@ export async function writeKeyboardHeightVp(context: object, heightVp: number): 
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
     const v: number = clampKeyboardHeightVp(heightVp);
-    try { pref.put(KEY_KEYBOARD_HEIGHT_VP, v); } catch { /* ignore */ }
+    try { pref.put(KEYBOARD_HEIGHT_VP, v); } catch { /* ignore */ }
     try { await pref.flush(); } catch { /* ignore */ }
   } catch {
     // ignore
   }
 }
 
-export async function readKeyboardReloadSeq(context: object): Promise<number> {
+export async function bumpKeyboardReloadSeq(context: object): Promise<number> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_KEYBOARD_RELOAD_SEQ, 0)) as number | string | boolean;
-    const n: number = toNumber(raw, 0);
-    return Number.isFinite(n) ? Math.floor(n) : 0;
+    const raw: number | string | boolean = (await pref.get(KEYBOARD_RELOAD_SEQ, 0)) as number | string | boolean;
+    const cur: number = toNumber(raw, 0);
+    const next: number = cur + 1;
+    try { pref.put(KEYBOARD_RELOAD_SEQ, next); } catch { /* ignore */ }
+    try { await pref.flush(); } catch { /* ignore */ }
+    return next;
   } catch {
     return 0;
   }
 }
 
-export async function bumpKeyboardReloadSeq(context: object): Promise<number> {
+export async function readKeyboardReloadSeq(context: object): Promise<number> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_KEYBOARD_RELOAD_SEQ, 0)) as number | string | boolean;
-    const cur: number = Number.isFinite(toNumber(raw, 0)) ? Math.floor(toNumber(raw, 0)) : 0;
-    const next: number = cur + 1;
-    try { pref.put(KEY_KEYBOARD_RELOAD_SEQ, next); } catch { /* ignore */ }
-    try { await pref.flush(); } catch { /* ignore */ }
-    return next;
+    const raw: number | string | boolean = (await pref.get(KEYBOARD_RELOAD_SEQ, 0)) as number | string | boolean;
+    return toNumber(raw, 0);
   } catch {
     return 0;
   }
@@ -100,20 +113,20 @@ export async function bumpKeyboardReloadSeq(context: object): Promise<number> {
 export async function readInputMethod(context: object): Promise<InputMethodType> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_INPUT_METHOD, DEFAULT_INPUT_METHOD)) as number | string | boolean;
-    const v: string = String(raw).toLowerCase();
-    if (v === 'vni') return 'vni';
+    const raw: number | string | boolean = (await pref.get(INPUT_METHOD, 'telex')) as number | string | boolean;
+    const s: string = String(raw).toLowerCase();
+    if (s === 'vni') return 'vni';
     return 'telex';
   } catch {
-    return DEFAULT_INPUT_METHOD;
+    return 'telex';
   }
 }
 
 export async function writeInputMethod(context: object, method: InputMethodType): Promise<void> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const v: InputMethodType = (method === 'vni') ? 'vni' : 'telex';
-    try { pref.put(KEY_INPUT_METHOD, v); } catch { /* ignore */ }
+    const v: string = method === 'vni' ? 'vni' : 'telex';
+    try { pref.put(INPUT_METHOD, v); } catch { /* ignore */ }
     try { await pref.flush(); } catch { /* ignore */ }
   } catch {
     // ignore
@@ -123,7 +136,7 @@ export async function writeInputMethod(context: object, method: InputMethodType)
 export async function readNumberRowEnabled(context: object): Promise<boolean> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_NUMBER_ROW_ENABLED, DEFAULT_NUMBER_ROW_ENABLED)) as number | string | boolean;
+    const raw: number | string | boolean = (await pref.get(NUMBER_ROW_ENABLED, DEFAULT_NUMBER_ROW_ENABLED)) as number | string | boolean;
     return toBool(raw, DEFAULT_NUMBER_ROW_ENABLED);
   } catch {
     return DEFAULT_NUMBER_ROW_ENABLED;
@@ -134,34 +147,20 @@ export async function writeNumberRowEnabled(context: object, enabled: boolean): 
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
     const v: boolean = !!enabled;
-    try { pref.put(KEY_NUMBER_ROW_ENABLED, v); } catch { /* ignore */ }
+    try { pref.put(NUMBER_ROW_ENABLED, v); } catch { /* ignore */ }
     try { await pref.flush(); } catch { /* ignore */ }
   } catch {
     // ignore
   }
 }
 
-// ---------------- HAPTICS ----------------
-export const KEY_HAPTIC_ENABLED: string = 'haptic_enabled';
-export const KEY_HAPTIC_INTENSITY: string = 'haptic_intensity';
-
-export const DEFAULT_HAPTIC_ENABLED: boolean = true;
-export const MIN_HAPTIC_INTENSITY: number = 0;
-export const MAX_HAPTIC_INTENSITY: number = 100;
-export const DEFAULT_HAPTIC_INTENSITY: number = 60;
-
-export function clampHapticIntensity(v: number): number {
-  let n: number = Math.floor(Number(v));
-  if (!Number.isFinite(n)) n = DEFAULT_HAPTIC_INTENSITY;
-  if (n < MIN_HAPTIC_INTENSITY) n = MIN_HAPTIC_INTENSITY;
-  if (n > MAX_HAPTIC_INTENSITY) n = MAX_HAPTIC_INTENSITY;
-  return n;
-}
-
 export async function readHapticEnabled(context: object): Promise<boolean> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_HAPTIC_ENABLED, DEFAULT_HAPTIC_ENABLED)) as number | string | boolean;
+    const raw: number | string | boolean = (await pref.get(
+      KEY_HAPTIC_ENABLED,
+      DEFAULT_HAPTIC_ENABLED
+    )) as number | string | boolean;
     return toBool(raw, DEFAULT_HAPTIC_ENABLED);
   } catch {
     return DEFAULT_HAPTIC_ENABLED;
@@ -182,7 +181,10 @@ export async function writeHapticEnabled(context: object, enabled: boolean): Pro
 export async function readHapticIntensity(context: object): Promise<number> {
   try {
     const pref = await preferences.getPreferences(context as never, PREF_NAME);
-    const raw: number | string | boolean = (await pref.get(KEY_HAPTIC_INTENSITY, DEFAULT_HAPTIC_INTENSITY)) as number | string | boolean;
+    const raw: number | string | boolean = (await pref.get(
+      KEY_HAPTIC_INTENSITY,
+      DEFAULT_HAPTIC_INTENSITY
+    )) as number | string | boolean;
     return clampHapticIntensity(toNumber(raw, DEFAULT_HAPTIC_INTENSITY));
   } catch {
     return DEFAULT_HAPTIC_INTENSITY;
