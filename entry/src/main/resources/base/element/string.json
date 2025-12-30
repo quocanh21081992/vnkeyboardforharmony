@@ -179,6 +179,10 @@
     {
       "name": "settings_off",
       "value": "Tắt"
+    },
+    {
+      "name": "settings_haptics_desc",
+      "value": "Bật/tắt rung khi gõ và điều chỉnh cường độ (10–100)."
     }
   ]
 }

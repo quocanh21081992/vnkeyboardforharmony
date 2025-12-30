@@ -337,16 +337,32 @@ struct Settings {
             .backgroundColor($r('app.color.page_bg'))
             .onClick(() => this.onToggleNumberRow(!this.numberRowEnabled))
 
-
+            Divider().margin({ top: 16, bottom: 16 })
             // Haptic toggle
+            Text($r('app.string.settings_haptics_title'))
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .textAlign(TextAlign.Start)
+
+            Text($r('app.string.settings_haptics_desc'))
+              .margin({ top: 8 })
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+              .lineHeight(18)
+              .width('100%')
+              .textAlign(TextAlign.Start)
+
+            // Haptics toggle
             Row() {
-              Text('Rung khi gõ')
+              Text($r('app.string.settings_haptics_title'))
                 .fontSize(14)
                 .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)
                 .textAlign(TextAlign.Start)
 
-              Text(this.hapticEnabled ? 'Bật' : 'Tắt')
+              Text(this.hapticEnabled ? $r('app.string.settings_on') : $r('app.string.settings_off'))
                 .fontSize(14)
                 .fontColor($r('app.color.text_secondary'))
             }
@@ -361,7 +377,7 @@ struct Settings {
             if (this.hapticEnabled) {
               Column() {
                 Row() {
-                  Text('Cường độ')
+                  Text($r('app.string.settings_haptics_intensity'))
                     .fontSize(13)
                     .fontColor($r('app.color.text_primary'))
                     .layoutWeight(1)
@@ -373,7 +389,7 @@ struct Settings {
                 }
                 .width('100%')
 
-                Slider({ value: this.hapticIntensity, min: 0, max: 100, step: 1 })
+                Slider({ value: this.hapticIntensity, min: 10, max: 100, step: 10 })
                   .width('100%')
                   .onChange((v: number) => this.onChangeHapticIntensity(v))
               }

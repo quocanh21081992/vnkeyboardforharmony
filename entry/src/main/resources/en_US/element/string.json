@@ -26,15 +26,23 @@
     },
     {
       "name": "menu_privacy_desc",
-      "value": "Data collection and how it is used"
+      "value": "Information about collected data and how it is used"
     },
     {
       "name": "menu_about_title",
-      "value": "About"
+      "value": "About the app"
     },
     {
       "name": "menu_about_desc",
       "value": "Features, guide, and contact"
+    },
+    {
+      "name": "menu_settings_title",
+      "value": "Keyboard settings"
+    },
+    {
+      "name": "menu_settings_desc",
+      "value": "Customize keyboard height"
     },
     {
       "name": "btn_keyboard_activated",
@@ -49,6 +57,54 @@
       "value": "Open system settings"
     },
     {
+      "name": "settings_header",
+      "value": "Settings"
+    },
+    {
+      "name": "settings_keyboard_height_title",
+      "value": "Keyboard height"
+    },
+    {
+      "name": "settings_keyboard_height_desc",
+      "value": "Enter the keyboard height in vp (e.g., 270)."
+    },
+    {
+      "name": "settings_height_invalid",
+      "value": "Please enter a valid number."
+    },
+    {
+      "name": "settings_height_range",
+      "value": "Valid range: %d - %d."
+    },
+    {
+      "name": "settings_reset",
+      "value": "Default"
+    },
+    {
+      "name": "settings_save",
+      "value": "Save"
+    },
+    {
+      "name": "settings_saving",
+      "value": "Saving..."
+    },
+    {
+      "name": "settings_saved",
+      "value": "Settings saved"
+    },
+    {
+      "name": "settings_save_failed",
+      "value": "Save failed"
+    },
+    {
+      "name": "settings_note_title",
+      "value": "Note"
+    },
+    {
+      "name": "settings_note_body",
+      "value": "Vietnam Keyboard must be enabled in Full Mode under Settings > System > Input Method to use customization options."
+    },
+    {
       "name": "about_header",
       "value": "About"
     },
@@ -58,7 +114,7 @@
     },
     {
       "name": "about_section_intro_body",
-      "value": "Vietnam Keyboard is a Vietnamese input method for Huawei HarmonyOS 6. This app is completely free for the Huawei Vietnam community."
+      "value": "Vietnam Keyboard is a Vietnamese keyboard app for Huawei HarmonyOS 6. It is completely free for the Huawei Vietnam community."
     },
     {
       "name": "about_section_features_title",
@@ -66,15 +122,15 @@
     },
     {
       "name": "about_section_features_body",
-      "value": "- Vietnamese Telex input (VNI will be supported in a future update).\n- Compatible with Android apps running in the emulator."
+      "value": "- Vietnamese Telex input (VNI will be supported in the next update).\n- Compatible with Android apps running in emulation."
     },
     {
       "name": "about_section_license_title",
-      "value": "Credits"
+      "value": "License"
     },
     {
       "name": "about_section_license_body",
-      "value": "Vietnam Keyboard is developed by Anh Dương.\nIf you enjoy the app, you can support me via donation.\nAccount: 0778211992\nBank: MB Bank"
+      "value": "Vietnam Keyboard is developed by Anh Duong.\nIf you enjoy the app, you can donate to support me.\nAccount No.: 0778211992\nBank: MB Bank"
     },
     {
       "name": "about_section_contact_title",
@@ -82,7 +138,7 @@
     },
     {
       "name": "about_section_contact_body",
-      "value": "Feedback/bug reports: quocanh21081992@gmail.com\nVersion: 1.0.0"
+      "value": "For feedback or bug reports, please email: quocanh21081992@gmail.com\nVersion: 1.0.0"
     },
     {
       "name": "privacy_header",
@@ -94,11 +150,11 @@
     },
     {
       "name": "privacy_section_user_data_body",
-      "value": "We do not collect or use any user data in any way."
+      "value": "We do not collect or use any user data in any form."
     },
     {
       "name": "privacy_last_update",
-      "value": "Last updated: Dec 23, 2025"
+      "value": "Last updated: 12/23/2025"
     },
     {
       "name": "InputMethodExtAbility_desc",
@@ -110,11 +166,11 @@
     },
     {
       "name": "settings_haptics_title",
-      "value": "Haptic feedback"
+      "value": "Typing vibration"
     },
     {
       "name": "settings_haptics_intensity",
-      "value": "Intensity"
+      "value": "Vibration intensity"
     },
     {
       "name": "settings_on",
@@ -123,6 +179,10 @@
     {
       "name": "settings_off",
       "value": "Off"
+    },
+    {
+      "name": "settings_haptics_desc",
+      "value": "Enable/disable typing vibration and adjust intensity (10–100)."
     }
   ]
 }

@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\quoca\\.ohos\\config\\default_vntelexkeyboardforharmony_kR9nnPhyTEnzbQyXnafS6NKiwxeQEupqIRwFPQHzl0Y=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001B707FD8CB836DBB29DEF2443FA2F4F17E17C1E34B37B3CEDCBB72016F1C8415DD7515DFAA5B0429",
-          "profile": "C:\\Users\\quoca\\.ohos\\config\\default_vntelexkeyboardforharmony_kR9nnPhyTEnzbQyXnafS6NKiwxeQEupqIRwFPQHzl0Y=.p7b",
+          "storeFile": "C:/Cerf/Vietnam Keyboard.p12",
+          "storePassword": "0000001D6847C8C923DBDB7B197FB1B51E3E53AF2F9665E894ADB135665388B0373DD381AB61BB77C7221D0F14",
+          "keyAlias": "release",
+          "keyPassword": "0000001D991655024EA77CF967466501C671B52E6147A64F522D23268DB5366C9CC6AF370EA6AD50DFBF3276E5",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\quoca\\.ohos\\config\\default_vntelexkeyboardforharmony_kR9nnPhyTEnzbQyXnafS6NKiwxeQEupqIRwFPQHzl0Y=.p12",
-          "storePassword": "0000001B90669889E849F4D8CCE604D54B99CF353E162CC56F52C32C58A562AE0C72F01C30DD2344659EE0"
+          "profile": "C:/Cerf/Vietnam KeyboardRelease.p7b",
+          "certpath": "C:/Cerf/Vietnam Keyboard.cer"
         }
       }
     ],

@@ -290,6 +290,8 @@ struct Index {
           let nextInputMethod: string | undefined = undefined;
           let nextNumberRow: boolean | undefined = undefined;
 
+          let nextHapticEnabled: boolean | undefined = undefined;
+          let nextHapticIntensity: number | undefined = undefined;
           // Newer payload: JSON { heightVp, inputMethod, numberRowEnabled }
           const t: string = raw.trim();
           if (t.startsWith('{') && t.endsWith('}')) {
@@ -304,6 +306,12 @@ struct Index {
               }
               if (typeof obj.numberRowEnabled === 'boolean') {
                 nextNumberRow = obj.numberRowEnabled;
+              }
+              if (typeof obj.hapticEnabled === 'boolean') {
+                nextHapticEnabled = obj.hapticEnabled;
+              }
+              if (typeof obj.hapticIntensity === 'number' && Number.isFinite(obj.hapticIntensity)) {
+                nextHapticIntensity = obj.hapticIntensity;
               }
             } catch {
               // ignore
@@ -337,6 +345,12 @@ struct Index {
             } catch {
               // ignore
             }
+          }
+
+          if (nextHapticEnabled !== undefined || nextHapticIntensity !== undefined) {
+            const en: boolean = (nextHapticEnabled !== undefined) ? nextHapticEnabled : this.hapticEnabled;
+            const it: number = (nextHapticIntensity !== undefined) ? nextHapticIntensity : this.hapticIntensity;
+            this.applyHapticSetting(!!en, it, false);
           }
 
           // rebuild UI scale

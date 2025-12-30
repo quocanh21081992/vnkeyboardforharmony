@@ -3,7 +3,7 @@
 
 import preferences from '@ohos.data.preferences';
 
-export const PREF_NAME: string = 'vk_settings_ime';
+export const PREF_NAME: string = 'vk_settings_app';
 export const KEY_KEYBOARD_HEIGHT_VP: string = 'keyboard_height_vp';
 export const KEY_KEYBOARD_RELOAD_SEQ: string = 'keyboard_reload_seq';
 

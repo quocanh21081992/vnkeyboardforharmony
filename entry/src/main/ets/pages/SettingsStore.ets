@@ -59,11 +59,17 @@ export function clampKeyboardHeightVp(v: number): number {
 export function clampHapticIntensity(v: number): number {
   let n: number = Math.round(v);
   if (!isFinite(n)) return DEFAULT_HAPTIC_INTENSITY;
-  if (n < 0) n = 0;
+
+  // Intensity is configured in steps of 10, range 10..100.
+  // (0 is removed; use hapticEnabled=false to disable vibration.)
+  if (n < 10) n = 10;
+  if (n > 100) n = 100;
+
+  n = Math.round(n / 10) * 10;
+  if (n < 10) n = 10;
   if (n > 100) n = 100;
   return n;
 }
-
 // NOTE: using object for context to avoid importing UIAbilityContext types
 export async function readKeyboardHeightVp(context: object): Promise<number> {
   try {
