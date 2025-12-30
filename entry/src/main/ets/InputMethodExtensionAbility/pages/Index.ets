@@ -555,10 +555,10 @@ struct Index {
   }
 
   @Builder
-  private KeyView(k: KeyData, rowH: number) {
+  private KeyView(k: KeyData) {
     if (k.kind === KeyKind.Spacer) {
       Blank()
-        .height(rowH)
+        .height(this.s.keyH)
         .margin({ left: this.s.gapX / 2, right: this.s.gapX / 2 })
         .layoutWeight(k.weight);
     } else {
@@ -585,7 +585,7 @@ struct Index {
             .fontWeight(this.isFn(k) ? FontWeight.Medium : FontWeight.Regular);
         }
       }
-      .height(rowH)
+      .height(this.s.keyH)
       .margin({ left: this.s.gapX / 2, right: this.s.gapX / 2 })
       .borderRadius(this.s.radius)
       .backgroundColor(this.bgColorOf(k))
@@ -614,32 +614,20 @@ struct Index {
     return (this.capsOn || this.shiftOnce) ? 'caps' : 'main';
   }
 
-  private effectiveGapY(_rowsCount: number): number {
-    // Keep row spacing consistent with ABC layout.
-    return this.s.gapY;
-  }
+  private effectiveGapY(rowsCount: number): number {
+    if (rowsCount <= 1) return 0;
 
-  private keyboardBodyTargetHeight(): number {
-    // Target height of the keyboard body area (excluding PreviewBar),
-    // based on the current ABC layout (with/without number row).
-    const baseRows: number = this.getAbcRows().length;
-    if (baseRows <= 0) return 0;
-    return baseRows * this.s.keyH + (baseRows - 1) * this.s.gapY;
-  }
+    // Height available for KeyboardBody (exclude PreviewBar height).
+    const bodyAvail: number = Math.max(0, this.contentHeightVp - this.s.keyH);
 
-  private rowHeightForIndex(ri: number, rowsCount: number): number {
-    if (rowsCount <= 0) return this.s.keyH;
-    // Keep the bottom row (space/enter row) the same height as ABC.
-    if (ri === rowsCount - 1) return this.s.keyH;
+    // If we're already tight, keep the base gap.
+    const baseGap: number = this.s.gapY;
+    const minNeeded: number = rowsCount * this.s.keyH + (rowsCount - 1) * baseGap;
+    if (bodyAvail <= minNeeded) return baseGap;
 
-    const topCount: number = Math.max(1, rowsCount - 1);
-    const target: number = this.keyboardBodyTargetHeight();
-    const gapTotal: number = Math.max(0, (rowsCount - 1) * this.s.gapY);
-    const remain: number = Math.max(0, target - this.s.keyH - gapTotal);
-    const h: number = Math.floor(remain / topCount);
-
-    // Never shrink below the normal key height.
-    return Math.max(this.s.keyH, h);
+    // Distribute extra space into the gaps between rows.
+    const gap: number = Math.floor((bodyAvail - rowsCount * this.s.keyH) / (rowsCount - 1));
+    return Math.max(baseGap, gap);
   }
 
 
@@ -690,7 +678,7 @@ struct Index {
             ForEach(
               row,
               (k: KeyData) => {
-                this.KeyView(k, this.rowHeightForIndex(ri, this.currentRowCount()));
+                this.KeyView(k);
               },
               (k: KeyData) => {
                 // Make keys stable across toggles to avoid row-reuse glitches.
@@ -700,7 +688,7 @@ struct Index {
             );
           }
           .width('100%')
-          .height(this.rowHeightForIndex(ri, this.currentRowCount()))
+          .height(this.s.keyH)
           .margin({ top: ri === 0 ? 0 : this.effectiveGapY(this.currentRowCount()) });
         },
         (_row: Array<KeyData>, i: number) => {
@@ -753,7 +741,6 @@ struct Index {
       }
     })
     .width('100%')
-    .height(this.keyboardBodyTargetHeight())
     .height('100%');
   }
 }
