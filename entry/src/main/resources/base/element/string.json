@@ -163,6 +163,22 @@
     {
       "name": "vietnamese",
       "value": "Tiếng Việt"
+    },
+    {
+      "name": "settings_haptics_title",
+      "value": "Rung khi gõ"
+    },
+    {
+      "name": "settings_haptics_intensity",
+      "value": "Cường độ rung"
+    },
+    {
+      "name": "settings_on",
+      "value": "Bật"
+    },
+    {
+      "name": "settings_off",
+      "value": "Tắt"
     }
   ]
 }

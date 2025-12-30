@@ -107,6 +107,22 @@
     {
       "name": "vietnamese",
       "value": "Vietnamese"
+    },
+    {
+      "name": "settings_haptics_title",
+      "value": "Haptic feedback"
+    },
+    {
+      "name": "settings_haptics_intensity",
+      "value": "Intensity"
+    },
+    {
+      "name": "settings_on",
+      "value": "On"
+    },
+    {
+      "name": "settings_off",
+      "value": "Off"
     }
   ]
 }

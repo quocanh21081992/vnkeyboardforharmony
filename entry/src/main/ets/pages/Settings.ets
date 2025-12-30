@@ -11,11 +11,24 @@ import {
   writeInputMethod,
   readNumberRowEnabled,
   writeNumberRowEnabled,
+
+  readHapticEnabled,
+  writeHapticEnabled,
+  readHapticIntensity,
+  writeHapticIntensity,
+
+  clampHapticIntensity,
   type InputMethodType,
+
   DEFAULT_KEYBOARD_HEIGHT_VP,
   MIN_KEYBOARD_HEIGHT_VP,
   MAX_KEYBOARD_HEIGHT_VP,
-  DEFAULT_NUMBER_ROW_ENABLED
+  DEFAULT_NUMBER_ROW_ENABLED,
+
+  DEFAULT_HAPTIC_ENABLED,
+  DEFAULT_HAPTIC_INTENSITY,
+  MIN_HAPTIC_INTENSITY,
+  MAX_HAPTIC_INTENSITY
 } from './SettingsStore'
 
 const EVENT_REBUILD_KEYBOARD: string = 'com.quoca.vntelexkeyboard.REBUILD';
@@ -26,6 +39,10 @@ struct Settings {
   @State private heightText: string = ''
   @State private inputMethod: InputMethodType = 'telex'
   @State private numberRowEnabled: boolean = DEFAULT_NUMBER_ROW_ENABLED
+
+  @State private hapticEnabled: boolean = DEFAULT_HAPTIC_ENABLED
+  @State private hapticIntensity: number = DEFAULT_HAPTIC_INTENSITY
+
   @State private loading: boolean = true
   @State private saving: boolean = false
   @State private errorText: string = ''
@@ -50,30 +67,44 @@ struct Settings {
     this.loading = true
     this.errorText = ''
     try {
-      // getContext() is deprecated (API 18+). Use UIContext.getHostContext() instead.
       const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
-      Promise.all([
-        readKeyboardHeightVp(ctx).catch(() => DEFAULT_KEYBOARD_HEIGHT_VP),
-        readInputMethod(ctx).catch(() => 'telex' as InputMethodType),
-        readNumberRowEnabled(ctx).catch(() => DEFAULT_NUMBER_ROW_ENABLED)
-      ]).then((vals: Array<number | InputMethodType | boolean>) => {
+
+      const tasks: Array<Promise<number | InputMethodType | boolean>> = [
+        readKeyboardHeightVp(ctx).catch((): number => DEFAULT_KEYBOARD_HEIGHT_VP),
+        readInputMethod(ctx).catch((): InputMethodType => 'telex' as InputMethodType),
+        readNumberRowEnabled(ctx).catch((): boolean => DEFAULT_NUMBER_ROW_ENABLED),
+        readHapticEnabled(ctx).catch((): boolean => DEFAULT_HAPTIC_ENABLED),
+        readHapticIntensity(ctx).catch((): number => DEFAULT_HAPTIC_INTENSITY)
+      ]
+
+      Promise.all(tasks).then((vals: Array<number | InputMethodType | boolean>): void => {
         const h: number = vals[0] as number
         const m: InputMethodType = vals[1] as InputMethodType
         const nrow: boolean = vals[2] as boolean
+        const hOn: boolean = vals[3] as boolean
+        const hInt: number = vals[4] as number
+
         this.heightText = String(h)
         this.inputMethod = m
         this.numberRowEnabled = !!nrow
+        this.hapticEnabled = !!hOn
+        this.hapticIntensity = clampHapticIntensity(hInt)
+
         this.loading = false
-      }).catch((_e: BusinessError) => {
+      }).catch((_e: BusinessError): void => {
         this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
         this.inputMethod = 'telex'
         this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED
+        this.hapticEnabled = DEFAULT_HAPTIC_ENABLED
+        this.hapticIntensity = DEFAULT_HAPTIC_INTENSITY
         this.loading = false
       })
-    } catch (e) {
+    } catch (_e) {
       this.heightText = String(DEFAULT_KEYBOARD_HEIGHT_VP)
       this.inputMethod = 'telex'
       this.numberRowEnabled = DEFAULT_NUMBER_ROW_ENABLED
+      this.hapticEnabled = DEFAULT_HAPTIC_ENABLED
+      this.hapticIntensity = DEFAULT_HAPTIC_INTENSITY
       this.loading = false
     }
   }
@@ -102,52 +133,81 @@ struct Settings {
     return n
   }
 
+  private publishRebuild(heightVp: number, method: InputMethodType, numberRowEnabled: boolean, hapticEnabled: boolean, hapticIntensity: number): void {
+    try {
+      const payload: string = JSON.stringify({
+        heightVp: heightVp,
+        inputMethod: method,
+        numberRowEnabled: !!numberRowEnabled,
+        hapticEnabled: !!hapticEnabled,
+        hapticIntensity: clampHapticIntensity(hapticIntensity)
+      })
+      commonEventManager.publish(EVENT_REBUILD_KEYBOARD, { data: payload }, (_err?: BusinessError): void => {
+        // ignore
+      })
+    } catch {
+      // ignore
+    }
+  }
+
   private onPickInputMethod(m: InputMethodType): void {
     this.inputMethod = m
     try {
       const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
-      writeInputMethod(ctx, m).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
-      // Keep same behavior as height changes: bump seq + rebuild keyboard.
-      bumpKeyboardReloadSeq(ctx).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+      writeInputMethod(ctx, m).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+      bumpKeyboardReloadSeq(ctx).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
     } catch {
       // ignore
     }
     const hVp: number = this.getHeightForRebuild()
-    this.publishRebuild(hVp, m, this.numberRowEnabled)
+    this.publishRebuild(hVp, m, this.numberRowEnabled, this.hapticEnabled, this.hapticIntensity)
   }
 
   private onToggleNumberRow(next: boolean): void {
     this.numberRowEnabled = !!next
     try {
       const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
-      writeNumberRowEnabled(ctx, this.numberRowEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
-      // Keep same behavior as height changes: bump seq + rebuild keyboard.
-      bumpKeyboardReloadSeq(ctx).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
+      writeNumberRowEnabled(ctx, this.numberRowEnabled).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+      bumpKeyboardReloadSeq(ctx).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
     } catch {
       // ignore
     }
     const hVp: number = this.getHeightForRebuild()
-    this.publishRebuild(hVp, this.inputMethod, this.numberRowEnabled)
+    this.publishRebuild(hVp, this.inputMethod, this.numberRowEnabled, this.hapticEnabled, this.hapticIntensity)
+  }
+
+  private onToggleHaptics(next: boolean): void {
+    this.hapticEnabled = !!next
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
+      writeHapticEnabled(ctx, this.hapticEnabled).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+    } catch {
+      // ignore
+    }
+    const hVp: number = this.getHeightForRebuild()
+    this.publishRebuild(hVp, this.inputMethod, this.numberRowEnabled, this.hapticEnabled, this.hapticIntensity)
+  }
+
+  private onChangeHapticIntensity(v: number): void {
+    const next: number = clampHapticIntensity(v)
+    this.hapticIntensity = next
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
+      writeHapticIntensity(ctx, next).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+    } catch {
+      // ignore
+    }
+    const hVp: number = this.getHeightForRebuild()
+    this.publishRebuild(hVp, this.inputMethod, this.numberRowEnabled, this.hapticEnabled, this.hapticIntensity)
   }
 
   @Builder
   private InputMethodMenu() {
     Menu() {
       MenuItem({ content: 'Telex' })
-        .onClick(() => this.onPickInputMethod('telex'))
+        .onClick((): void => this.onPickInputMethod('telex'))
       MenuItem({ content: 'VNI' })
-        .onClick(() => this.onPickInputMethod('vni'))
-    }
-  }
-
-  private publishRebuild(heightVp: number, method: InputMethodType, numberRowEnabled: boolean): void {
-    try {
-      const payload: string = JSON.stringify({ heightVp: heightVp, inputMethod: method, numberRowEnabled: !!numberRowEnabled })
-      commonEventManager.publish(EVENT_REBUILD_KEYBOARD, { data: payload }, (_err?: BusinessError) => {
-        // ignore
-      })
-    } catch {
-      // ignore
+        .onClick((): void => this.onPickInputMethod('vni'))
     }
   }
 
@@ -169,40 +229,34 @@ struct Settings {
     this.saving = true
 
     try {
-      // getContext() is deprecated (API 18+). Use UIContext.getHostContext() instead.
       const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext
-      writeKeyboardHeightVp(ctx, n).then(() => {
-        // ✅ (Tuỳ chọn) bump seq để debug/log dễ hơn, không cần nút riêng nữa
+      writeKeyboardHeightVp(ctx, n).then((): void => {
         try {
-          bumpKeyboardReloadSeq(ctx).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
-        } catch {
-          // ignore
-        }
+          bumpKeyboardReloadSeq(ctx).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+        } catch { /* ignore */ }
 
-        // Persist input method (for UIAbility pref). Keyboard will also persist it after rebuild.
         try {
-          writeInputMethod(ctx, this.inputMethod).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
-        } catch {
-          // ignore
-        }
+          writeInputMethod(ctx, this.inputMethod).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+        } catch { /* ignore */ }
 
-        // Persist number-row setting (UIAbility pref)
         try {
-          writeNumberRowEnabled(ctx, this.numberRowEnabled).then(() => { /* ignore */ }).catch(() => { /* ignore */ })
-        } catch {
-          // ignore
-        }
+          writeNumberRowEnabled(ctx, this.numberRowEnabled).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+        } catch { /* ignore */ }
 
-        // ✅ GỘP REBUILD VÀO NÚT LƯU
-        this.publishRebuild(n, this.inputMethod, this.numberRowEnabled)
+        try {
+          writeHapticEnabled(ctx, this.hapticEnabled).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+          writeHapticIntensity(ctx, this.hapticIntensity).then((): void => { /* ignore */ }).catch((): void => { /* ignore */ })
+        } catch { /* ignore */ }
+
+        this.publishRebuild(n, this.inputMethod, this.numberRowEnabled, this.hapticEnabled, this.hapticIntensity)
 
         this.saving = false
         this.showToast('Đã lưu cài đặt.')
-      }).catch((_e: BusinessError) => {
+      }).catch((_e: BusinessError): void => {
         this.saving = false
         this.showToast('Lưu thất bại. Vui lòng thử lại.')
       })
-    } catch (e) {
+    } catch {
       this.saving = false
       this.showToast('Lưu thất bại. Vui lòng thử lại.')
     }
@@ -221,7 +275,7 @@ struct Settings {
           .fontSize(20)
           .fontColor($r('app.color.text_primary'))
           .padding({ left: 16, right: 10, top: 12, bottom: 12 })
-          .onClick(() => this.back())
+          .onClick((): void => this.back())
 
         Text($r('app.string.settings_header'))
           .fontSize(18)
@@ -275,7 +329,55 @@ struct Settings {
             .margin({ top: 10 })
             .borderRadius(10)
             .backgroundColor($r('app.color.page_bg'))
-            .onClick(() => this.onToggleNumberRow(!this.numberRowEnabled))
+            .onClick((): void => this.onToggleNumberRow(!this.numberRowEnabled))
+
+            // Haptics toggle
+            Row() {
+              Text($r('app.string.settings_haptics_title'))
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+                .textAlign(TextAlign.Start)
+
+              Text(this.hapticEnabled ? $r('app.string.settings_on') : $r('app.string.settings_off'))
+                .fontSize(14)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .width('100%')
+            .height(44)
+            .padding({ left: 12, right: 12 })
+            .margin({ top: 10 })
+            .borderRadius(10)
+            .backgroundColor($r('app.color.page_bg'))
+            .onClick((): void => this.onToggleHaptics(!this.hapticEnabled))
+
+            // Haptics intensity
+            Column() {
+              Row() {
+                Text($r('app.string.settings_haptics_intensity'))
+                  .fontSize(14)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                  .textAlign(TextAlign.Start)
+
+                Text(`${this.hapticIntensity}`)
+                  .fontSize(14)
+                  .fontColor($r('app.color.text_secondary'))
+              }
+              .width('100%')
+              .margin({ bottom: 6 })
+
+              Slider({ value: this.hapticIntensity, min: MIN_HAPTIC_INTENSITY, max: MAX_HAPTIC_INTENSITY, step: 1 })
+                .enabled(this.hapticEnabled)
+                .onChange((value: number): void => {
+                  this.onChangeHapticIntensity(value)
+                })
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+            .margin({ top: 10 })
+            .borderRadius(10)
+            .backgroundColor($r('app.color.page_bg'))
 
             Divider().margin({ top: 16, bottom: 16 })
 
@@ -297,7 +399,7 @@ struct Settings {
             Row() {
               TextInput({ text: this.heightText, placeholder: String(DEFAULT_KEYBOARD_HEIGHT_VP) })
                 .type(InputType.Number)
-                .onChange((v: string) => {
+                .onChange((v: string): void => {
                   this.heightText = v
                   this.errorText = ''
                 })
@@ -327,17 +429,15 @@ struct Settings {
             Row({ space: 10 }) {
               Button($r('app.string.settings_reset'))
                 .layoutWeight(1)
-                .onClick(() => this.resetToDefault())
+                .onClick((): void => this.resetToDefault())
 
               Button(this.saving ? $r('app.string.settings_saving') : $r('app.string.settings_save'))
                 .layoutWeight(1)
                 .enabled(!this.loading && !this.saving)
-                .onClick(() => this.save())
+                .onClick((): void => this.save())
             }
             .width('100%')
             .margin({ top: 14 })
-
-            // ✅ Đã bỏ nút Rebuild riêng để gọn UI
           }
           .width('100%')
           .padding(16)
